@@ -1,0 +1,11 @@
+scenario,step,delta $M
+upside,MAU growth,102.73
+upside,Conversion,198.01
+upside,Free trials,34.98
+upside,Retention,587.01
+upside,Reactivation,96.05
+downside,MAU growth,-114.78
+downside,Conversion,-176.26
+downside,Free trials,-25.53
+downside,Retention,-339.77
+downside,Reactivation,-109.06

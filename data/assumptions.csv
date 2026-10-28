@@ -8,9 +8,10 @@ mau_share,mau,EUROPE,all,0.28,share,0.22,0.32,proposed,S07;A01,2026-10-27,No dir
 mau_share,mau,LATAM,all,0.14,share,0.10,0.18,proposed,S07;A01,2026-10-27,Brazil 7.25% of traffic plus rest of LatAm
 mau_share,mau,APAC,all,0.15,share,0.10,0.20,proposed,S07;A01,2026-10-27,India 4.9% of traffic plus Japan/SEA/ANZ
 mau_share,mau,ROW,all,0.12,share,0.08,0.16,proposed,S07;A01,2026-10-27,"Turkey, Russia, MENA, Africa"
-mau_growth_first,mau,all,base,0.10,YoY,0.06,0.14,proposed,S02;S03;A01,2026-10-27,Tracker YoY 2024-25: 8.7% (Resourcera) to 13.8% (Feedough); applies to 2025
-mau_growth_first,mau,all,upside,0.13,YoY,0.10,0.16,proposed,S02;A01,2026-10-27,Near the high tracker growth rate
-mau_growth_first,mau,all,downside,0.06,YoY,0.03,0.09,proposed,A01,2026-10-27,
+mau_growth_2025,mau,all,all,0.10,YoY,0.06,0.14,proposed,S02;S03;A01,2026-10-28,Tracker YoY 2024-25: 8.7% (Resourcera) to 13.8% (Feedough). Same in every scenario: FY2025 is the calibration year
+mau_growth_first,mau,all,base,0.08,YoY,0.05,0.11,proposed,S02;S03;A01,2026-10-28,"Applies to 2026, the first forecast year; fades linearly to mau_growth_last by 2030"
+mau_growth_first,mau,all,upside,0.11,YoY,0.08,0.14,proposed,S02;A01,2026-10-28,Near the high tracker growth rate
+mau_growth_first,mau,all,downside,0.05,YoY,0.02,0.08,proposed,A01,2026-10-28,
 mau_growth_last,mau,all,base,0.04,YoY,0.02,0.06,proposed,A01,2026-10-27,Applies to 2030; linear fade from first-year growth
 mau_growth_last,mau,all,upside,0.06,YoY,0.04,0.08,proposed,A01,2026-10-27,
 mau_growth_last,mau,all,downside,0.00,YoY,-0.03,0.02,proposed,A01,2026-10-27,Flat MAU by 2030
@@ -74,10 +75,8 @@ open_region_mix,opening_book,EUROPE,all,0.30,share,0.25,0.35,proposed,A01,2026-1
 open_region_mix,opening_book,LATAM,all,0.08,share,0.05,0.12,proposed,A01,2026-10-27,
 open_region_mix,opening_book,APAC,all,0.10,share,0.06,0.14,proposed,A01,2026-10-27,
 open_region_mix,opening_book,ROW,all,0.07,share,0.04,0.10,proposed,A01,2026-10-27,
-open_y1_share,opening_book,all,all,0.35,share of book in first year of tenure,0.25,0.45,proposed,A01,2026-10-28,"Drives the Apple 30% vs 15% fee split for the opening book only; new cohorts get tenure from the cohort engine"
-open_churn_tail,opening_book,MONTHLY,base,0.035,share / month,0.025,0.05,benchmark,S13;S14,2026-10-27,Tenured monthly subscribers: between Spotify global (3.9%) and mature (1-2%)
-open_churn_tail,opening_book,MONTHLY,upside,0.025,share / month,0.015,0.035,benchmark,S14,2026-10-27,
-open_churn_tail,opening_book,MONTHLY,downside,0.050,share / month,0.035,0.06,benchmark,S13,2026-10-27,
+open_y1_share,opening_book,all,all,0.35,share of book in first year of tenure,0.25,0.45,proposed,A01,2026-10-28,Drives the Apple 30% vs 15% fee split for the opening book only; new cohorts get tenure from the cohort engine
+open_churn_tail,opening_book,MONTHLY,all,0.035,share / month,0.025,0.05,benchmark,S13;S14,2026-10-27,Tenured monthly subscribers: between Spotify global (3.9%) and mature (1-2%). Same in every scenario: the opening book keeps base behavior
 list_price,pricing,NITRO_M,all,9.99,USD / month,,,verified,S08;S09,2026-07-01,US list price; unchanged for years
 list_price,pricing,NITRO_A,all,99.99,USD / year,,,verified,S08;S09,2026-07-01,~17% below 12x monthly
 list_price,pricing,BASIC_M,all,2.99,USD / month,,,verified,S08;S09,2026-07-01,
@@ -120,6 +119,7 @@ fx_spot,fx,BRL,all,5.045256,local per USD,,,verified,S18,2026-10-19,5.6633 / 1.1
 fx_spot,fx,INR,all,94.930067,local per USD,,,verified,S18,2026-10-19,106.559 / 1.1225
 fx_spot,fx,USD,all,1,local per USD,,,design,P01,2026-10-27,
 fx_spot_month_index,fx,all,all,22,month index (Jan 2025 = 1),,,design,P01,2026-10-27,Path: 2025 at FY avg; Jan-Oct 2026 linear to spot; Nov 2026+ covered-interest-parity forward from spot
+forecast_start_month_index,timeline,all,all,13,month index (Jan 2025 = 1),,,design,P01,2026-10-28,"Jan 2026. Scenarios and sliders change sign-ups, trials, churn and reactivation from this month; FY2025 is fixed history"
 policy_rate,fx,USD,all,0.03625,annual,0.035,0.0375,anchor,S19,2026-06-30,Fed 3.50-3.75% midpoint; stale (June 2026) and low-authority source
 policy_rate,fx,EUR,all,0.024,annual,0.0225,0.024,anchor,S19,2026-06-30,ECB MRO 2.40% (deposit 2.25%)
 policy_rate,fx,JPY,all,0.01,annual,0.0075,0.01,anchor,S19,2026-06-30,Sources conflict: 1.00% vs 0.75%

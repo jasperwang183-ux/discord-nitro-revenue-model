@@ -68,3 +68,23 @@ def test_fx_shock_matches_in_workbook(tmp_path, params, shock):
     row = layout["rows"][("Revenue", "TOTAL")]
     for t in (11, 21, 22, 40, 71):
         assert compiler.evaluate(f"Revenue!{col(t)}{row}") == pytest.approx(expected[t], abs=1.0)
+
+
+@pytest.mark.parametrize("scenario, overrides", [
+    ("upside", None), ("downside", None),
+    ("base", {"exp_enabled": 1, "exp_price_change": 0.1}),
+])
+def test_scenarios_and_experiment_match_in_workbook(tmp_path, assumptions, scenario, overrides):
+    """History, forecast and experiment eras give the same subscribers and revenue in Excel as in Python."""
+    from nitro_model.cohorts import run
+    from nitro_model.params import build_params
+
+    path = tmp_path / f"{scenario}.xlsx"
+    layout = export(path, scenario, overrides)
+    compiler = ExcelCompiler(filename=str(path))
+    res = run(build_params(assumptions, scenario) | (overrides or {}))
+    rev_row, sub_row = layout["rows"][("Revenue", "TOTAL")], layout["rows"][("Subs", "closing", "TOTAL")]
+    for t in (5, 11, 12, 30, 47, 71):
+        assert compiler.evaluate(f"Revenue!{col(t)}{rev_row}") == pytest.approx(res["revenue"][..., t].sum(), abs=1.0)
+        assert compiler.evaluate(f"Subs!{col(t)}{sub_row}") == pytest.approx(res["closing"][..., t].sum(), abs=0.01)
+    assert bool(compiler.evaluate("Checks!C7"))  # cohort triangle ties across eras

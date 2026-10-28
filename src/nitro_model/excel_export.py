@@ -6,6 +6,10 @@ Every number traces back to the Assumptions sheet. The only pasted value is the 
 Cohort sums use SUMPRODUCT of a sign-up row against a *reversed* survival curve, so a month's active subscribers
 is one formula instead of a triangle. The Cohort_US_NitroM sheet lays one segment out as a full triangle so you can
 rebuild a cohort by hand; Checks ties it back to the SUMPRODUCT line.
+
+Eras: every curve exists three times (@0 history = base values, @1 forecast = the scenario's values, @2 experiment =
+forecast with churn scaled). Sign-ups are split by the era they started in (Eras sheet masks) and each part is
+convolved with its own era's curve, exactly as cohorts.by_era does.
 """
 from __future__ import annotations
 
@@ -17,9 +21,8 @@ from openpyxl.utils import get_column_letter
 
 from nitro_model.arpu import PLANS
 from nitro_model.assumptions import Assumptions
-from nitro_model.cohorts import calibrate
-from nitro_model.cohorts import REF_YEAR_END
-from nitro_model.params import BILLING, CURRENCIES, REACT_INTO, REGIONS, build_params
+from nitro_model.cohorts import CHURN_KEYS, REF_YEAR_END, RENEWAL_KEYS, calibrate
+from nitro_model.params import BILLING, CURRENCIES, ERA_SPEC, REACT_INTO, REGIONS, build_params
 
 C0 = 3  # first month column (C)
 HEAD = Font(bold=True)
@@ -29,16 +32,13 @@ PLATFORMS = ("WEB", "IOS", "ANDROID")
 
 # (param name, assumption id, segment, scale)
 SCALARS = [
-    ("mau0", "mau_jan2025", "all", 1e6), ("mau_growth_first", "mau_growth_first", "all", 1),
-    ("mau_growth_last", "mau_growth_last", "all", 1), ("conv_multiplier", "conv_multiplier", "all", 1),
-    ("trial_share", "trial_share", "all", 1), ("trial_months", "trial_months", "all", 1),
-    ("trial_to_paid", "trial_to_paid", "all", 1), ("count_trials_as_subs", "count_trials_as_subs", "all", 1),
-    ("churn_m1", "churn_m1", "MONTHLY", 1), ("churn_m2", "churn_m2", "MONTHLY", 1),
-    ("churn_m3", "churn_m3", "MONTHLY", 1), ("churn_tail", "churn_tail", "MONTHLY", 1),
-    ("annual_renewal_first", "annual_renewal_first", "ANNUAL", 1),
-    ("annual_renewal_later", "annual_renewal_later", "ANNUAL", 1),
-    ("react_rate", "react_rate", "all", 1), ("react_window_months", "react_window_months", "all", 1),
-    ("react_churn_tail", "react_churn_tail", "all", 1), ("open_subs", "open_subs", "all", 1e6),
+    ("mau0", "mau_jan2025", "all", 1e6), ("mau_growth_2025", "mau_growth_2025", "all", 1),
+    ("mau_growth_first", "mau_growth_first", "all", 1), ("mau_growth_last", "mau_growth_last", "all", 1),
+    ("trial_months", "trial_months", "all", 1), ("count_trials_as_subs", "count_trials_as_subs", "all", 1),
+    ("forecast_start_month_index", "forecast_start_month_index", "all", 1),
+    ("exp_enabled", "exp_enabled", "all", 1), ("exp_start_month_index", "exp_start_month_index", "all", 1),
+    ("exp_conv_lift", "exp_conv_lift", "all", 1), ("exp_churn_change", "exp_churn_change", "all", 1),
+    ("exp_price_change", "exp_price_change", "all", 1), ("open_subs", "open_subs", "all", 1e6),
     ("open_churn_tail", "open_churn_tail", "MONTHLY", 1), ("open_y1_share", "open_y1_share", "all", 1),
     ("avg_discount", "avg_discount", "all", 1), ("fee_web", "store_fee", "WEB", 1),
     ("fee_ios_y1", "store_fee", "IOS_Y1", 1), ("fee_ios_later", "store_fee", "IOS_LATER", 1),
@@ -57,7 +57,8 @@ def col(t: int) -> str:
 class Book:
     def __init__(self, a: Assumptions, scenario: str = "base", overrides: dict | None = None):
         self.a, self.scenario = a, scenario
-        self.p = build_params(a, scenario) | (overrides or {})
+        self.overrides = overrides or {}
+        self.p = build_params(a, scenario) | self.overrides
         self.T = len(self.p["months"])
         self.wb = Workbook()
         self.wb.remove(self.wb.active)
@@ -88,15 +89,30 @@ class Book:
             cell.value = fn(t)
             cell.number_format = fmt
 
+    def drv(self, key: str, era: int) -> str:
+        """Cell or expression for an era-varying driver: @0 history, @1 forecast, @2 experiment."""
+        R = self.ref
+        if era == 0:
+            return R[f"hist.{key}"]
+        if era == 2 and key in CHURN_KEYS:
+            return f"MIN(1,{R[key]}*(1+{R['exp_churn_change']}))"
+        if era == 2 and key in RENEWAL_KEYS:
+            return f"(1-MIN(1,(1-{R[key]})*(1+{R['exp_churn_change']})))"
+        return R[key]
+
+    def eras_window(self, sheet: str, rows: list[int], curve: str, t: int) -> str:
+        """Sum over eras of SUMPRODUCT(that era's sign-ups, that era's reversed curve)."""
+        return "+".join(self.window(sheet, rows[e], self.rows[("Curves", f"{curve}@{e}")], t) for e in range(3))
+
     def window(self, sheet: str, row: int, curve_row: int, t: int) -> str:
         rev_start = col(self.T - 1 - t)
         if t == 0:  # one-cell window: a plain product (pycel rejects one-cell SUMPRODUCT ranges)
             return f"{sheet}!$C${row}*Curves!${self.last}${curve_row}"
         return f"SUMPRODUCT({sheet}!$C${row}:${col(t)}${row},Curves!${rev_start}${curve_row}:${self.last}${curve_row})"
 
-    def assumption_cell(self, aid: str, seg: str, column: str = "E") -> str:
+    def assumption_cell(self, aid: str, seg: str, column: str = "E", scenario: str | None = None) -> str:
         t = self.a.table
-        rows = t[(t["id"] == aid) & (t["segment"] == seg) & t["scenario"].isin([self.scenario, "all"])]
+        rows = t[(t["id"] == aid) & (t["segment"] == seg) & t["scenario"].isin([scenario or self.scenario, "all"])]
         idx = rows.sort_values("scenario", key=lambda s: s.eq("all")).index[0]
         return f"Assumptions!${column}${idx + 2}"
 
@@ -106,6 +122,7 @@ class Book:
         self.assumptions()
         self.params()
         self.curves()
+        self.eras()
         self.mau()
         self.prices()
         self.fx()
@@ -124,7 +141,8 @@ class Book:
         lines = [
             "Discord Nitro subscription revenue model (portfolio project). All Discord figures are third-party estimates.",
             f"Scenario: {self.scenario}. Generated by nitro_model.excel_export from data/assumptions.csv; mirrors src/nitro_model/cohorts.py.",
-            "Flow: Assumptions -> Params -> Curves / MAU / Prices -> Adds -> Paid, Legacy, React -> Subs -> Revenue -> Checks.",
+            "Flow: Assumptions -> Params -> Curves / Eras / MAU / Prices / FX -> Adds -> Paid, Legacy, React -> Subs -> Revenue -> Checks.",
+            "FY2025 is history (base values, Params hist.*). From Params!forecast_start_month_index the scenario's values apply to new sign-ups.",
             "Change inputs only on the Assumptions sheet (yellow cells on Params link there). Params!k_cal is solved in Python.",
             "Active subscribers = SUMPRODUCT(sign-ups to date, reversed survival curve). Cohort_US_NitroM shows one segment as a full triangle.",
             "Prices are fixed in local currency at FY2025 average FX; the FX sheet turns them into USD each month (Params!fx_shock_dir: +1 = USD 10% stronger).",
@@ -156,9 +174,18 @@ class Book:
             ws[f"B{r}"].fill = INPUT
             self.ref[name] = f"Params!$B${r}"
 
-        for name, aid, seg, scale in SCALARS:
-            cell = self.assumption_cell(aid, seg)
+        def link(name: str, aid: str, seg: str, scale: float = 1, scenario: str | None = None):
+            if name in self.overrides:
+                add(name, self.overrides[name], f"OVERRIDE for this export (assumption {aid}[{seg}] not used)")
+                return
+            cell = self.assumption_cell(aid, seg, scenario=scenario)
             add(name, f"={cell}*{scale:g}" if scale != 1 else f"={cell}", f"{aid}[{seg}]")
+
+        for name, aid, seg, scale in SCALARS:
+            link(name, aid, seg, scale)
+        for key, aid, seg in ERA_SPEC:
+            link(f"hist.{key}", aid, seg, scenario="base")
+            link(key, aid, seg)
         lo, hi = (self.assumption_cell("cal_nitro_rev_2025", "all", c) for c in ("G", "H"))
         add("cal_rev_low", f"={lo}*1000000", "cal_nitro_rev_2025 low")
         add("cal_rev_high", f"={hi}*1000000", "cal_nitro_rev_2025 high")
@@ -193,39 +220,72 @@ class Book:
         age = lambda a: f"{col(a)}$1"  # noqa: E731
         names = ["S_MONTHLY", "S_ANNUAL", "D_MONTHLY", "D_ANNUAL", "S_REACT", "D_REACT", "K_REACT",
                  "S_MONTHLY_Y1", "S_ANNUAL_Y1", "S_REACT_Y1"]
-        fwd = {n: i + 2 for i, n in enumerate(names)}
-        rev = {n: i + 2 + len(names) + 1 for i, n in enumerate(names)}
-        hz = (f"IF({{a}}=1,{R['churn_m1']},IF({{a}}=2,{R['churn_m2']},IF({{a}}=3,{R['churn_m3']},{R['churn_tail']})))")
-        for a in range(T):
-            c, prev = col(a), col(a - 1) if a else None
-            f = {
-                "S_MONTHLY": "=1" if a == 0 else f"={prev}{fwd['S_MONTHLY']}*(1-{hz.format(a=age(a))})",
-                "S_ANNUAL": f"=IF({age(a)}<12,1,{R['annual_renewal_first']}*{R['annual_renewal_later']}^(INT({age(a)}/12)-1))",
-                "D_MONTHLY": "=0" if a == 0 else f"={prev}{fwd['S_MONTHLY']}-{c}{fwd['S_MONTHLY']}",
-                "D_ANNUAL": "=0" if a == 0 else f"={prev}{fwd['S_ANNUAL']}-{c}{fwd['S_ANNUAL']}",
-                "S_REACT": f"=(1-{R['react_churn_tail']})^{age(a)}",
-                "D_REACT": "=0" if a == 0 else f"={prev}{fwd['S_REACT']}-{c}{fwd['S_REACT']}",
-                "K_REACT": (f"=IF(AND({age(a)}>=1,{age(a)}<={R['react_window_months']}),"
-                            f"{R['react_rate']}*(1-{R['react_rate']})^({age(a)}-1),0)"),
-                "S_MONTHLY_Y1": f"=IF({age(a)}<12,{c}{fwd['S_MONTHLY']},0)",
-                "S_ANNUAL_Y1": f"=IF({age(a)}<12,{c}{fwd['S_ANNUAL']},0)",
-                "S_REACT_Y1": f"=IF({age(a)}<12,{c}{fwd['S_REACT']},0)",
-            }
+        row = 3
+        for e, era_name in enumerate(("history", "forecast", "experiment")):
+            ws[f"A{row}"] = f"@{e}: {era_name}"
+            ws[f"A{row}"].font = HEAD
+            fwd = {n: row + 1 + i for i, n in enumerate(names)}
+            rev = {n: row + 2 + len(names) + i for i, n in enumerate(names)}
+            d = lambda k, e=e: self.drv(k, e)  # noqa: E731
+            hz = (f"IF({{a}}=1,{d('churn_m1')},IF({{a}}=2,{d('churn_m2')},IF({{a}}=3,{d('churn_m3')},{d('churn_tail')})))")
+            for a in range(T):
+                c, prev = col(a), col(a - 1) if a else None
+                f = {
+                    "S_MONTHLY": "=1" if a == 0 else f"={prev}{fwd['S_MONTHLY']}*(1-{hz.format(a=age(a))})",
+                    "S_ANNUAL": (f"=IF({age(a)}<12,1,{d('annual_renewal_first')}"
+                                 f"*{d('annual_renewal_later')}^(INT({age(a)}/12)-1))"),
+                    "D_MONTHLY": "=0" if a == 0 else f"={prev}{fwd['S_MONTHLY']}-{c}{fwd['S_MONTHLY']}",
+                    "D_ANNUAL": "=0" if a == 0 else f"={prev}{fwd['S_ANNUAL']}-{c}{fwd['S_ANNUAL']}",
+                    "S_REACT": f"=(1-{d('react_churn_tail')})^{age(a)}",
+                    "D_REACT": "=0" if a == 0 else f"={prev}{fwd['S_REACT']}-{c}{fwd['S_REACT']}",
+                    "K_REACT": (f"=IF(AND({age(a)}>=1,{age(a)}<={d('react_window_months')}),"
+                                f"{d('react_rate')}*(1-{d('react_rate')})^({age(a)}-1),0)"),
+                    "S_MONTHLY_Y1": f"=IF({age(a)}<12,{c}{fwd['S_MONTHLY']},0)",
+                    "S_ANNUAL_Y1": f"=IF({age(a)}<12,{c}{fwd['S_ANNUAL']},0)",
+                    "S_REACT_Y1": f"=IF({age(a)}<12,{c}{fwd['S_REACT']},0)",
+                }
+                for n in names:
+                    ws[f"{c}{fwd[n]}"] = f[n]
+                    ws[f"{c}{rev[n]}"] = f"=INDEX($C${fwd[n]}:${last}${fwd[n]},{T - a})"
             for n in names:
-                ws[f"{c}{fwd[n]}"] = f[n]
-                ws[f"{c}{rev[n]}"] = f"=INDEX($C${fwd[n]}:${last}${fwd[n]},{T - a})"
-        for n in names:
-            ws[f"A{fwd[n]}"] = n
-            ws[f"A{rev[n]}"] = f"{n} reversed"
-            self.rows[("Curves", n)] = rev[n]
-        ws[f"A{len(names) + 2}"] = "Reversed rows run oldest age first so SUMPRODUCT can pair them with sign-ups to date."
-        ws.column_dimensions["A"].width = 22
+                ws[f"A{fwd[n]}"] = f"{n}@{e}"
+                ws[f"A{rev[n]}"] = f"{n}@{e} reversed"
+                self.rows[("Curves", f"{n}@{e}")] = rev[n]
+                self.rows[("CurvesFwd", f"{n}@{e}")] = fwd[n]
+            row = rev[names[-1]] + 2
+        ws["A2"] = "Reversed rows run oldest age first so SUMPRODUCT can pair them with sign-ups to date."
+        ws.column_dimensions["A"].width = 26
+
+    def eras(self):
+        ws = self.sheet("Eras")
+        R = self.ref
+        fs, xs = f"({R['forecast_start_month_index']}-1)", f"({R['exp_start_month_index']}-1)"
+        t = lambda c: f"{col(c)}$2"  # noqa: E731
+        m = {0: 3, 1: 4, 2: 5}
+        self.row_formula(ws, 3, "era @0 history", "mask", lambda c: f"=IF({t(c)}<{fs},1,0)", "0")
+        self.row_formula(ws, 5, "era @2 experiment", "mask",
+                         lambda c: f"=IF(AND({t(c)}>={fs},{R['exp_enabled']}=1,{t(c)}>={xs}),1,0)", "0")
+        self.row_formula(ws, 4, "era @1 forecast", "mask", lambda c: f"=1-{col(c)}3-{col(c)}5", "0")
+
+        def mix(key, c):
+            return f"({col(c)}{m[0]}*{R[f'hist.{key}']}+({col(c)}{m[1]}+{col(c)}{m[2]})*{R[key]})"
+
+        self.row_formula(ws, 7, "conversion multiplier", "by month",
+                         lambda c: f"={mix('conv_multiplier', c)}*(1+{R['exp_conv_lift']}*{col(c)}{m[2]})", "0.0000")
+        self.row_formula(ws, 8, "trial share of sign-ups", "by month", lambda c: f"={mix('trial_share', c)}", "0.0000")
+        self.row_formula(ws, 9, "trial-to-paid (by trial start)", "by month", lambda c: f"={mix('trial_to_paid', c)}", "0.0000")
+        self.row_formula(ws, 10, "price factor", "by month", lambda c: f"=1+{R['exp_price_change']}*{col(c)}{m[2]}", "0.0000")
+        for e in range(3):
+            self.rows[("Eras", e)] = m[e]
+        for i, k in enumerate(("conv", "trial_share", "ttp", "price")):
+            self.rows[("Eras", k)] = 7 + i
 
     def mau(self):
         ws = self.sheet("MAU")
         R = self.ref
         years = self.T // 12
-        g = f"({R['mau_growth_first']}+({R['mau_growth_last']}-{R['mau_growth_first']})*INT({{c}}$2/12)/{years - 1})"
+        g = (f"IF(INT({{c}}$2/12)=0,{R['mau_growth_2025']},{R['mau_growth_first']}+({R['mau_growth_last']}"
+             f"-{R['mau_growth_first']})*(INT({{c}}$2/12)-1)/{years - 2})")
         self.row_formula(ws, 3, "MAU total", "all",
                          lambda t: f"={R['mau0']}" if t == 0 else f"={col(t - 1)}3*(1+{g.format(c=col(t))})^(1/12)")
         for i, r in enumerate(REGIONS):
@@ -285,8 +345,10 @@ class Book:
     def adds(self):
         ws = self.sheet("Adds")
         R = self.ref
-        lines = ["gross adds", "trial starts", "direct paid starts", "trials ending", "trials converted",
-                 "trials lost", "cum trial starts", "cum trials ending", "trials active", "paid starts"]
+        lines = ["gross adds", "trial starts", "direct paid starts", "trials ending", "trial starts x conversion",
+                 "trials converted", "trials lost", "cum trial starts", "cum trials ending", "trials active", "paid starts",
+                 "paid starts @0", "paid starts @1", "paid starts @2"]
+        E = lambda key, t: f"Eras!{col(t)}${self.rows[('Eras', key)]}"  # noqa: E731
         row = 3
         for r in REGIONS:
             for pn in PLANS:
@@ -295,18 +357,21 @@ class Book:
                 rng = lambda name: f"$C${k[name]}:${self.last}${k[name]}"  # noqa: E731
                 f = {
                     "gross adds": lambda t: (f"=MAU!{col(t)}{self.rows[('MAU', r)]}*{R[f'conv_rate[{r}]']}"
-                                             f"*{R['conv_multiplier']}*{R['k_cal']}*{R[f'plan_mix[{pn}]']}"),
-                    "trial starts": lambda t: f"={col(t)}{k['gross adds']}*{R['trial_share']}",
+                                             f"*{E('conv', t)}*{R['k_cal']}*{R[f'plan_mix[{pn}]']}"),
+                    "trial starts": lambda t: f"={col(t)}{k['gross adds']}*{E('trial_share', t)}",
                     "direct paid starts": lambda t: f"={col(t)}{k['gross adds']}-{col(t)}{k['trial starts']}",
                     "trials ending": lambda t: (f"=IF({col(t)}$2>={R['trial_months']},"
                                                 f"INDEX({rng('trial starts')},{col(t)}$2-{R['trial_months']}+1),0)"),
-                    "trials converted": lambda t: f"={col(t)}{k['trials ending']}*{R['trial_to_paid']}",
+                    "trial starts x conversion": lambda t: f"={col(t)}{k['trial starts']}*{E('ttp', t)}",
+                    "trials converted": lambda t: (f"=IF({col(t)}$2>={R['trial_months']},"
+                                                   f"INDEX({rng('trial starts x conversion')},{col(t)}$2-{R['trial_months']}+1),0)"),
                     "trials lost": lambda t: f"={col(t)}{k['trials ending']}-{col(t)}{k['trials converted']}",
                     "cum trial starts": lambda t: f"=SUM($C{k['trial starts']}:{col(t)}{k['trial starts']})",
                     "cum trials ending": lambda t: f"=SUM($C{k['trials ending']}:{col(t)}{k['trials ending']})",
                     "trials active": lambda t: f"={col(t)}{k['cum trial starts']}-{col(t)}{k['cum trials ending']}",
                     "paid starts": lambda t: f"={col(t)}{k['direct paid starts']}+{col(t)}{k['trials converted']}",
-                }
+                } | {f"paid starts @{e}": (lambda t, e=e: f"={col(t)}{k['paid starts']}*Eras!{col(t)}${self.rows[('Eras', e)]}")
+                     for e in range(3)}
                 for name in lines:
                     self.row_formula(ws, k[name], name, seg, f[name])
                     self.rows[("Adds", name, r, pn)] = k[name]
@@ -318,11 +383,11 @@ class Book:
         for r in REGIONS:
             for pn in PLANS:
                 seg, billing = f"{r}|{pn}", BILLING[pn]
-                src = self.rows[("Adds", "paid starts", r, pn)]
+                srcs = [self.rows[("Adds", f"paid starts @{e}", r, pn)] for e in range(3)]
                 spec = [("active", f"S_{billing}"), ("active yr 1", f"S_{billing}_Y1"), ("churned", f"D_{billing}")]
                 for i, (name, curve) in enumerate(spec):
-                    cr = self.rows[("Curves", curve)]
-                    self.row_formula(ws, row + i, name, seg, lambda t, cr=cr: "=" + self.window("Adds", src, cr, t))
+                    self.row_formula(ws, row + i, name, seg,
+                                     lambda t, curve=curve, srcs=srcs: "=" + self.eras_window("Adds", srcs, curve, t))
                     self.rows[("Paid", name, r, pn)] = row + i
                 row += len(spec) + 1
 
@@ -333,7 +398,7 @@ class Book:
                          lambda t: f"={R['open_y1_share']}*MAX(0,1-{col(t)}$2/12)", FMT_PCT)
         self.rows[("Legacy", "y1")] = 3
         row = 5
-        rl = R["annual_renewal_later"]
+        rl = R["hist.annual_renewal_later"]
         for r in REGIONS:
             for pn in PLANS:
                 seg = f"{r}|{pn}"
@@ -356,28 +421,34 @@ class Book:
 
     def react(self):
         ws = self.sheet("React")
-        lines = ["churn pool inflow", "reactivations out", "reactivated in", "active", "active yr 1", "churned"]
+        lines = ["churn pool inflow", "inflow @0", "inflow @1", "inflow @2", "reactivations out", "reactivated in",
+                 "reactivated in @0", "reactivated in @1", "reactivated in @2", "active", "active yr 1", "churned"]
+        mask = lambda e, t: f"Eras!{col(t)}${self.rows[('Eras', e)]}"  # noqa: E731
         row = 3
         k = {}
         for r in REGIONS:
             for pn in PLANS:
                 k[(r, pn)] = {name: row + i for i, name in enumerate(lines)}
                 row += len(lines) + 1
-        cur = {n: self.rows[("Curves", n)] for n in ("K_REACT", "S_REACT", "S_REACT_Y1", "D_REACT")}
         for r in REGIONS:
             for pn in PLANS:
                 seg, kk = f"{r}|{pn}", k[(r, pn)]
+                ins = [kk[f"reactivated in @{e}"] for e in range(3)]
+                inflows = [kk[f"inflow @{e}"] for e in range(3)]
                 sources = [src for src in PLANS if REACT_INTO[src] == pn]
                 f = {
                     "churn pool inflow": lambda t: (f"=Paid!{col(t)}{self.rows[('Paid', 'churned', r, pn)]}"
                                                     f"+Legacy!{col(t)}{self.rows[('Legacy', 'churned', r, pn)]}"),
-                    "reactivations out": lambda t: "=" + self.window("React", kk["churn pool inflow"], cur["K_REACT"], t),
+                    "reactivations out": lambda t: "=" + self.eras_window("React", inflows, "K_REACT", t),
                     "reactivated in": lambda t: ("=" + "+".join(f"{col(t)}{k[(r, s)]['reactivations out']}" for s in sources)
                                                  if sources else "=0"),
-                    "active": lambda t: "=" + self.window("React", kk["reactivated in"], cur["S_REACT"], t),
-                    "active yr 1": lambda t: "=" + self.window("React", kk["reactivated in"], cur["S_REACT_Y1"], t),
-                    "churned": lambda t: "=" + self.window("React", kk["reactivated in"], cur["D_REACT"], t),
+                    "active": lambda t: "=" + self.eras_window("React", ins, "S_REACT", t),
+                    "active yr 1": lambda t: "=" + self.eras_window("React", ins, "S_REACT_Y1", t),
+                    "churned": lambda t: "=" + self.eras_window("React", ins, "D_REACT", t),
                 }
+                for e in range(3):
+                    f[f"inflow @{e}"] = lambda t, e=e: f"={col(t)}{kk['churn pool inflow']}*{mask(e, t)}"
+                    f[f"reactivated in @{e}"] = lambda t, e=e: f"={col(t)}{kk['reactivated in']}*{mask(e, t)}"
                 for name in lines:
                     self.row_formula(ws, kk[name], name, seg, f[name])
                     self.rows[("React", name, r, pn)] = kk[name]
@@ -430,7 +501,7 @@ class Book:
                                 f"+{g('Legacy', 'active', t)}*Legacy!{col(t)}${y1row})")
                 self.row_formula(ws, row, "net revenue $", f"{r}|{pn}", lambda t: (
                     f"=({y1(t)}*Prices!$H${pr}+({g('Subs', 'paying', t)}-{y1(t)})*Prices!$I${pr})"
-                    f"*FX!{col(t)}{self.rows[('FX', 'index', r)]}"), FMT_USD)
+                    f"*FX!{col(t)}{self.rows[('FX', 'index', r)]}*Eras!{col(t)}${self.rows[('Eras', 'price')]}"), FMT_USD)
                 self.rows[("Revenue", r, pn)] = row
                 seg_rows.append(row)
                 row += 1
@@ -444,8 +515,9 @@ class Book:
         r, pn = "US_CA", "NITRO_M"
         ws = self.sheet("Cohort_US_NitroM")
         src = self.rows[("Adds", "paid starts", r, pn)]
-        s_row = 2  # Curves forward S_MONTHLY
-        ws["A3"] = "Rows: sign-up month (cohort). Columns: calendar month. Cell = sign-ups x survival at age (month - cohort)."
+        fwd = [self.rows[("CurvesFwd", f"S_MONTHLY@{e}")] for e in range(3)]
+        ws["A3"] = ("Rows: sign-up month (cohort). Columns: calendar month. Cell = sign-ups x survival at age (month - cohort), "
+                    "using the survival curve of the era the cohort started in.")
         first = 5
         for c in range(self.T):
             row = first + c
@@ -454,7 +526,9 @@ class Book:
             ws[f"B{row}"].number_format = FMT_N
             for t in range(c, self.T):
                 cell = ws[f"{col(t)}{row}"]
-                cell.value = f"=$B{row}*INDEX(Curves!$C${s_row}:${self.last}${s_row},{col(t)}$2-{c}+1)"
+                surv = "+".join(f"Eras!${col(c)}${self.rows[('Eras', e)]}*INDEX(Curves!$C${fwd[e]}:${self.last}${fwd[e]},"
+                                f"{col(t)}$2-{c}+1)" for e in range(3))
+                cell.value = f"=$B{row}*({surv})"
                 cell.number_format = FMT_N
         tot = first + self.T + 1
         self.row_formula(ws, tot, "sum of cohorts", f"{r}|{pn}", lambda t: f"=SUM({col(t)}{first}:{col(t)}{tot - 2})")

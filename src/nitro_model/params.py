@@ -2,9 +2,12 @@
 
 The engine (cohorts.py) never sees the assumptions table: it only sees this dict. The website gets the same
 dict as JSON and its sliders edit keys in it, so Python and the browser run identical inputs through identical code.
+
+History vs forecast: FY2025 is the calibration year and is the same in every scenario. The ERA_SPEC keys exist twice:
+`params["hist"]` holds base values used before the forecast start, and the top-level keys hold the scenario's values
+used for sign-ups, trials and reactivations from the forecast start. Sliders edit the top-level (forecast) keys.
 """
 from __future__ import annotations
-
 
 from nitro_model.arpu import PLANS, PLATFORMS
 from nitro_model.assumptions import Assumptions
@@ -15,6 +18,17 @@ BILLING = {"NITRO_M": "MONTHLY", "NITRO_A": "ANNUAL", "BASIC_M": "MONTHLY", "BAS
 REACT_INTO = {"NITRO_M": "NITRO_M", "NITRO_A": "NITRO_M", "BASIC_M": "BASIC_M", "BASIC_A": "BASIC_M"}
 M = 1e6
 
+# (params key, assumption id, segment): drivers that can differ between history and forecast.
+ERA_SPEC = [
+    ("conv_multiplier", "conv_multiplier", "all"), ("trial_share", "trial_share", "all"),
+    ("trial_to_paid", "trial_to_paid", "all"), ("churn_m1", "churn_m1", "MONTHLY"), ("churn_m2", "churn_m2", "MONTHLY"),
+    ("churn_m3", "churn_m3", "MONTHLY"), ("churn_tail", "churn_tail", "MONTHLY"),
+    ("annual_renewal_first", "annual_renewal_first", "ANNUAL"), ("annual_renewal_later", "annual_renewal_later", "ANNUAL"),
+    ("react_rate", "react_rate", "all"), ("react_window_months", "react_window_months", "all"),
+    ("react_churn_tail", "react_churn_tail", "all"),
+]
+INT_KEYS = {"react_window_months"}
+
 
 def build_params(a: Assumptions, scenario: str = "base") -> dict:
     g = lambda id, seg="all": a.get(id, seg, scenario)  # noqa: E731
@@ -22,7 +36,12 @@ def build_params(a: Assumptions, scenario: str = "base") -> dict:
     start_year = int(g("model_start_year"))
     horizon = int(g("horizon_months"))
     fx_segs = set(a.segments("fx_weight"))
-    return {
+
+    def era(scen: str) -> dict:
+        vals = {k: a.get(aid, seg, scen) for k, aid, seg in ERA_SPEC}
+        return {k: int(v) if k in INT_KEYS else v for k, v in vals.items()}
+
+    return era(scenario) | {
         "scenario": scenario,
         "regions": list(REGIONS),
         "plans": plans,
@@ -30,29 +49,27 @@ def build_params(a: Assumptions, scenario: str = "base") -> dict:
         "months": [f"{start_year + t // 12}-{t % 12 + 1:02d}" for t in range(horizon)],
         # demand
         "mau0": g("mau_jan2025") * M,
+        "mau_growth_2025": g("mau_growth_2025"),
         "mau_growth_first": g("mau_growth_first"),
         "mau_growth_last": g("mau_growth_last"),
         "mau_share": [g("mau_share", r) for r in REGIONS],
         "conv_rate": [g("conv_rate", r) for r in REGIONS],
-        "conv_multiplier": g("conv_multiplier"),
         "plan_mix": [g("plan_mix", p) for p in plans],
         "platform_mix": [[g("platform_mix", f"{r}|{pl}") for pl in PLATFORMS] for r in REGIONS],
+        # history vs forecast
+        "hist": era("base"),
+        "forecast_start_t": int(g("forecast_start_month_index")) - 1,
+        # experiment (cohort-based churn change; conversion and price change apply by calendar month)
+        "exp_enabled": int(g("exp_enabled")),
+        "exp_start_t": int(g("exp_start_month_index")) - 1,
+        "exp_conv_lift": g("exp_conv_lift"),
+        "exp_churn_change": g("exp_churn_change"),
+        "exp_price_change": g("exp_price_change"),
         # trials
-        "trial_share": g("trial_share"),
         "trial_months": int(g("trial_months")),
-        "trial_to_paid": g("trial_to_paid"),
         "count_trials_as_subs": int(g("count_trials_as_subs")),
         # retention
         "is_annual": [BILLING[p] == "ANNUAL" for p in plans],
-        "churn_m1": g("churn_m1", "MONTHLY"),
-        "churn_m2": g("churn_m2", "MONTHLY"),
-        "churn_m3": g("churn_m3", "MONTHLY"),
-        "churn_tail": g("churn_tail", "MONTHLY"),
-        "annual_renewal_first": g("annual_renewal_first", "ANNUAL"),
-        "annual_renewal_later": g("annual_renewal_later", "ANNUAL"),
-        "react_rate": g("react_rate"),
-        "react_window_months": int(g("react_window_months")),
-        "react_churn_tail": g("react_churn_tail"),
         "react_into": [plans.index(REACT_INTO[p]) for p in plans],
         # opening book
         "open_subs": g("open_subs") * M,
@@ -90,28 +107,33 @@ def build_params(a: Assumptions, scenario: str = "base") -> dict:
     }
 
 
-def slider_specs(a: Assumptions, scenario: str = "base") -> list[dict]:
-    """Website sliders: params key, assumption row, bounds from the CSV, and the row's sources."""
-    picks = [
-        ("conv_multiplier", "conv_multiplier", "all", "Conversion multiplier"),
-        ("churn_m1", "churn_m1", "MONTHLY", "Month-1 churn (monthly plans)"),
-        ("churn_tail", "churn_tail", "MONTHLY", "Tail churn per month"),
-        ("annual_renewal_first", "annual_renewal_first", "ANNUAL", "Annual plan first renewal"),
-        ("trial_share", "trial_share", "all", "Share of sign-ups on a free trial"),
-        ("trial_to_paid", "trial_to_paid", "all", "Trial-to-paid conversion"),
-        ("react_rate", "react_rate", "all", "Monthly reactivation rate"),
-        ("mau_growth_first", "mau_growth_first", "all", "MAU growth, 2025"),
-    ]
+SLIDERS = [
+    ("mau_growth_first", "mau_growth_first", "all", "MAU growth, 2026"),
+    ("conv_multiplier", "conv_multiplier", "all", "Conversion multiplier"),
+    ("churn_m1", "churn_m1", "MONTHLY", "Month-1 churn (monthly plans)"),
+    ("churn_tail", "churn_tail", "MONTHLY", "Tail churn per month"),
+    ("annual_renewal_first", "annual_renewal_first", "ANNUAL", "Annual plan first renewal"),
+    ("trial_share", "trial_share", "all", "Share of sign-ups on a free trial"),
+    ("trial_to_paid", "trial_to_paid", "all", "Trial-to-paid conversion"),
+    ("react_rate", "react_rate", "all", "Monthly reactivation rate"),
+]
+EXPERIMENT_SLIDERS = [
+    ("exp_conv_lift", "exp_conv_lift", "all", "Conversion lift"),
+    ("exp_churn_change", "exp_churn_change", "all", "Churn change (new sign-ups)"),
+    ("exp_price_change", "exp_price_change", "all", "Price change (everyone)"),
+]
+
+
+def slider_specs(a: Assumptions, scenario: str = "base", picks=SLIDERS) -> list[dict]:
+    """Website sliders: params key, bounds spanning every scenario's documented range, sources, and status."""
     rows = a.table
     out = []
     for key, aid, seg, label in picks:
         r = rows[(rows["id"] == aid) & (rows["segment"] == seg) & rows["scenario"].isin([scenario, "all"])]
         r = r.sort_values("scenario", key=lambda s: s.eq("all")).iloc[0]
-        lo, hi = a.bounds(aid, seg, scenario)
-        if lo != lo or hi != hi:  # no range on this row (e.g. base multiplier = 1 by design): span all scenarios
-            every = rows[(rows["id"] == aid) & (rows["segment"] == seg)]
-            lo = float(every[["low", "value"]].min().min())
-            hi = float(every[["high", "value"]].max().max())
+        every = rows[(rows["id"] == aid) & (rows["segment"] == seg)]
+        lo = float(every[["low", "value"]].min().min())
+        hi = float(every[["high", "value"]].max().max())
         out.append({"key": key, "label": label, "value": float(r["value"]), "low": lo, "high": hi,
                     "unit": r["unit"], "status": r["status"], "sources": r["source_ids"], "as_of": r["as_of"]})
     return out

@@ -10,8 +10,8 @@ def test_subscribers_hit_anchor_in_calibration_month(params, result):
 
 
 def test_calibration_is_exact_when_churn_changes(params):
-    """The solve is closed-form (subscribers are affine in the scalar), so it stays exact for any churn input."""
-    p = params | {"churn_tail": 0.08}
+    """The solve is closed-form (subscribers are affine in the scalar), so it stays exact for any history churn."""
+    p = params | {"hist": params["hist"] | {"churn_tail": 0.08}}
     i = p["cal_month_index"] - 1
     assert run(p)["closing"][..., i].sum() == pytest.approx(p["cal_target_subs"], rel=1e-9)
     assert calibrate(p) > calibrate(params)  # more churn needs more conversion to hold the anchor
@@ -20,3 +20,8 @@ def test_calibration_is_exact_when_churn_changes(params):
 def test_fy2025_revenue_inside_public_band(params, result):
     fy25 = result["revenue"][..., :12].sum()
     assert params["cal_rev_low"] <= fy25 <= params["cal_rev_high"]
+
+
+def test_forecast_inputs_do_not_move_calibration(params):
+    """Calibration only sees FY2025, so changing forecast-period churn leaves the conversion scalar alone."""
+    assert calibrate(params | {"churn_tail": 0.08}) == pytest.approx(calibrate(params))

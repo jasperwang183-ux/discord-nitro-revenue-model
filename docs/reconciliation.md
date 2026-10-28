@@ -109,9 +109,41 @@ Base monthly-plan survival at 12 months works out to about 34% (30% / 14% / 9% c
 ## 7. Calibration order: one target can't pin three drivers
 The subscriber anchor (7.3M in mid-2025, +17% YoY) is one stock figure. Conversion, churn and reactivation all move it, so fitting all three to it would be unidentified: any mix of the three could hit it. The order is fixed:
 1. **Churn curves and annual renewal** come from external benchmarks (section 5). They are never fitted.
-2. **Reactivation and trial conversion** are bounded judgment calls. The M4 sensitivity tests them; if 5-year revenue moves less than ~2% across their ranges, they stop being debated.
+2. **Reactivation and trial conversion** are bounded judgment calls. The M4 sensitivity tests them; if 5-year revenue moves less than ~2% across their ranges, they stop being debated. (Result: neither clears the bar; see section 8.)
 3. **Conversion is the only back-solved driver.** `conv_rate` is a monthly flow (gross adds per MAU per month, e.g. 0.45% in US/CA). It is not the ~3.1% penetration stock. The regional *pattern* stays as proposed, and calibration solves for **one scalar** on it, so subscribers hit 7.3M ± 10% in mid-2025.
 4. **Revenue is not calibrated.** It is checked against the $280M–$450M band, and whatever lands is reported.
+
+## 8. Scenarios: history is fixed, the forecast moves (M4)
+**Design.** If every scenario re-solved conversion to the 7.3M anchor, a lower-churn upside would simply get lower conversion to compensate. Retention scenarios would barely move the forecast: that is the identification problem from section 7. So:
+- **FY2025 is history.** It is calibrated once with base values and is identical in every scenario. A test checks this.
+- **From Jan 2026** (`forecast_start_month_index`), each scenario's MAU growth, conversion, trials, churn curves and reactivation apply to *new* sign-ups and reactivations.
+- **Customers acquired earlier keep base behavior.** This includes the Jan-2025 opening book, whose churn is now a single value for all scenarios.
+- **The experiment toggle** adds a third era from Jan 2027:
+  - conversion lift and churn change apply to new sign-ups
+  - the price change applies to everyone
+
+| Scenario | Peers | FY2030 revenue | FY2026–30 revenue | Dec-2030 subscribers |
+|---|---|---|---|---|
+| Downside | Duolingo monthly churn, −10% conversion, MAU growth fades to flat | $393M | $2.15B | 6.4M |
+| Base | Spotify global churn | $656M | $2.92B | 11.0M |
+| Upside | Spotify mature-market churn, +10% conversion | $1.04B | $3.94B | 17.7M |
+
+**Bridge (upside vs base, FY2026–30):** retention +$587M, conversion +$198M, MAU growth +$103M, reactivation +$96M, trials +$35M. Retention is also the largest step in the downside (−$340M).
+
+**Sensitivity, base case:** each assumption moved to the end of its documented range across all scenarios, measured as the swing in FY2026–30 revenue:
+
+| Assumption | Swing |
+|---|---|
+| Conversion multiplier | 25.7% |
+| Tail churn | 22.9% |
+| **Reactivation rate** | **17.3%** |
+| Free-trial share | 17.3% |
+| Month-1 churn | 14.1% |
+| MAU growth 2026 | 11.3% |
+| Annual first renewal | 4.8% |
+| **Trial-to-paid** | **3.6%** |
+
+**The section 7 rule fails for both judgment calls.** Section 7 said reactivation and trial conversion stop being debated if they move 5-year revenue less than ~2%. Neither clears that bar. Reactivation is the third-largest driver, with no public evidence behind it (`react_rate` is `proposed`, range 0.5–3% a month). It needs a source or a tighter range before the memo leans on any forecast number. Trial-to-paid is close enough to the bar to leave at its benchmark range.
 
 ## Open items for the owner
 1. Sign off on or replace every `status=proposed` row (see [review_queue.md](review_queue.md), regenerate with `python -m nitro_model.review_queue`).
