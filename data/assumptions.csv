@@ -1,0 +1,139 @@
+id,group,segment,scenario,value,unit,low,high,status,source_ids,as_of,notes
+model_start_year,timeline,all,all,2025,year,,,design,P01,2026-10-27,FY2025 is the calibration year against public estimates
+model_start_month,timeline,all,all,1,month,,,design,P01,2026-10-27,
+horizon_months,timeline,all,all,72,months,,,design,P01,2026-10-27,Jan 2025 to Dec 2030: 12 calibration months + 60 forecast months
+mau_jan2025,mau,all,all,225,M users,200,260,proposed,S06;S02;S03;A01,2026-10-27,Discord says 200M+ (May 2025); trackers say 227.7M (2024) to 250-259M (2025). Start below tracker midpoint: trackers likely mix visits and registered users
+mau_share,mau,US_CA,all,0.31,share,0.27,0.35,proposed,S07;A01,2026-10-27,Semrush web traffic US 29.1% plus Canada. Caveat: web traffic misses desktop-app and mobile-app use so regional mix may skew; conv_rate by region absorbs part of the error
+mau_share,mau,EUROPE,all,0.28,share,0.22,0.32,proposed,S07;A01,2026-10-27,No direct Europe figure found; judgment from country traffic tail (DE/FR/UK/PL)
+mau_share,mau,LATAM,all,0.14,share,0.10,0.18,proposed,S07;A01,2026-10-27,Brazil 7.25% of traffic plus rest of LatAm
+mau_share,mau,APAC,all,0.15,share,0.10,0.20,proposed,S07;A01,2026-10-27,India 4.9% of traffic plus Japan/SEA/ANZ
+mau_share,mau,ROW,all,0.12,share,0.08,0.16,proposed,S07;A01,2026-10-27,"Turkey, Russia, MENA, Africa"
+mau_growth_first,mau,all,base,0.10,YoY,0.06,0.14,proposed,S02;S03;A01,2026-10-27,Tracker YoY 2024-25: 8.7% (Resourcera) to 13.8% (Feedough); applies to 2025
+mau_growth_first,mau,all,upside,0.13,YoY,0.10,0.16,proposed,S02;A01,2026-10-27,Near the high tracker growth rate
+mau_growth_first,mau,all,downside,0.06,YoY,0.03,0.09,proposed,A01,2026-10-27,
+mau_growth_last,mau,all,base,0.04,YoY,0.02,0.06,proposed,A01,2026-10-27,Applies to 2030; linear fade from first-year growth
+mau_growth_last,mau,all,upside,0.06,YoY,0.04,0.08,proposed,A01,2026-10-27,
+mau_growth_last,mau,all,downside,0.00,YoY,-0.03,0.02,proposed,A01,2026-10-27,Flat MAU by 2030
+conv_rate,conversion,US_CA,all,0.0045,gross adds / MAU / month,0.0030,0.0060,proposed,A01,2026-10-27,Back-solved: ~0.65M gross adds/mo holds ~7.3M subs at a ~13-month blended lifetime. Split by willingness to pay. Recalibrated in M3
+conv_rate,conversion,EUROPE,all,0.0032,gross adds / MAU / month,0.0020,0.0045,proposed,A01,2026-10-27,
+conv_rate,conversion,LATAM,all,0.0015,gross adds / MAU / month,0.0008,0.0025,proposed,A01,2026-10-27,
+conv_rate,conversion,APAC,all,0.0018,gross adds / MAU / month,0.0010,0.0028,proposed,A01,2026-10-27,
+conv_rate,conversion,ROW,all,0.0015,gross adds / MAU / month,0.0008,0.0025,proposed,A01,2026-10-27,
+conv_multiplier,conversion,all,base,1.00,x,,,design,P01,2026-10-27,
+conv_multiplier,conversion,all,upside,1.10,x,1.05,1.20,proposed,A01,2026-10-27,
+conv_multiplier,conversion,all,downside,0.90,x,0.80,0.95,proposed,A01,2026-10-27,
+plan_mix,mix_plan,NITRO_M,all,0.45,share of gross adds,0.35,0.55,proposed,A01,2026-10-27,No public plan mix. Drives most of the ARPU gap vs list price
+plan_mix,mix_plan,NITRO_A,all,0.15,share of gross adds,0.08,0.25,proposed,S15;A01,2026-10-27,Duolingo shows annual share can reach 47-71% when pushed hard; Discord does not push annual that hard
+plan_mix,mix_plan,BASIC_M,all,0.32,share of gross adds,0.20,0.45,proposed,A01,2026-10-27,
+plan_mix,mix_plan,BASIC_A,all,0.08,share of gross adds,0.03,0.15,proposed,A01,2026-10-27,
+platform_mix,mix_platform,US_CA|WEB,all,0.55,share of gross adds,0.45,0.65,proposed,A01,2026-10-27,Desktop-first product; web/desktop billing avoids app store fees
+platform_mix,mix_platform,US_CA|IOS,all,0.30,share of gross adds,0.20,0.40,proposed,A01,2026-10-27,High iPhone share in US
+platform_mix,mix_platform,US_CA|ANDROID,all,0.15,share of gross adds,0.10,0.20,proposed,A01,2026-10-27,
+platform_mix,mix_platform,EUROPE|WEB,all,0.60,share of gross adds,0.50,0.70,proposed,A01,2026-10-27,
+platform_mix,mix_platform,EUROPE|IOS,all,0.22,share of gross adds,0.15,0.30,proposed,A01,2026-10-27,
+platform_mix,mix_platform,EUROPE|ANDROID,all,0.18,share of gross adds,0.12,0.25,proposed,A01,2026-10-27,
+platform_mix,mix_platform,LATAM|WEB,all,0.55,share of gross adds,0.45,0.65,proposed,A01,2026-10-27,
+platform_mix,mix_platform,LATAM|IOS,all,0.10,share of gross adds,0.05,0.15,proposed,A01,2026-10-27,Android-dominant region
+platform_mix,mix_platform,LATAM|ANDROID,all,0.35,share of gross adds,0.25,0.45,proposed,A01,2026-10-27,
+platform_mix,mix_platform,APAC|WEB,all,0.55,share of gross adds,0.45,0.65,proposed,A01,2026-10-27,
+platform_mix,mix_platform,APAC|IOS,all,0.20,share of gross adds,0.10,0.30,proposed,A01,2026-10-27,Japan iOS-heavy; India Android-heavy
+platform_mix,mix_platform,APAC|ANDROID,all,0.25,share of gross adds,0.15,0.35,proposed,A01,2026-10-27,
+platform_mix,mix_platform,ROW|WEB,all,0.55,share of gross adds,0.45,0.65,proposed,A01,2026-10-27,
+platform_mix,mix_platform,ROW|IOS,all,0.15,share of gross adds,0.10,0.20,proposed,A01,2026-10-27,
+platform_mix,mix_platform,ROW|ANDROID,all,0.30,share of gross adds,0.20,0.40,proposed,A01,2026-10-27,
+churn_m1,churn,MONTHLY,base,0.30,share of cohort,0.25,0.35,benchmark,S13;S16;A01,2026-10-27,Base = Spotify global average plus RevenueCat app benchmarks. Applies to paid starts (direct or converted trialists); trial drop-off is trial_to_paid
+churn_m1,churn,MONTHLY,upside,0.22,share of cohort,0.18,0.26,benchmark,S14;A01,2026-10-27,Upside = Spotify mature markets (US 1-2% tail)
+churn_m1,churn,MONTHLY,downside,0.40,share of cohort,0.35,0.50,benchmark,S15;S16;A01,2026-10-27,Downside = Duolingo monthly (9% renew at 12 mo) / RevenueCat expensive monthly (6.7%)
+churn_m2,churn,MONTHLY,base,0.14,share of survivors,0.10,0.18,benchmark,S13;S16;A01,2026-10-27,
+churn_m2,churn,MONTHLY,upside,0.10,share of survivors,0.07,0.13,benchmark,S14;A01,2026-10-27,
+churn_m2,churn,MONTHLY,downside,0.20,share of survivors,0.15,0.25,benchmark,S15;S16;A01,2026-10-27,
+churn_m3,churn,MONTHLY,base,0.09,share of survivors,0.06,0.12,benchmark,S13;S16;A01,2026-10-27,
+churn_m3,churn,MONTHLY,upside,0.06,share of survivors,0.04,0.08,benchmark,S14;A01,2026-10-27,
+churn_m3,churn,MONTHLY,downside,0.12,share of survivors,0.09,0.16,benchmark,S15;S16;A01,2026-10-27,
+churn_tail,churn,MONTHLY,base,0.05,share of survivors / month,0.039,0.06,benchmark,S13;S14,2026-10-27,Spotify Premium 4.8% (Q4'19) and 3.9% (2021 avg); Nitro is more discretionary so slightly higher
+churn_tail,churn,MONTHLY,upside,0.03,share of survivors / month,0.02,0.039,benchmark,S14,2026-10-27,Spotify mature markets 1-2%; Nitro set above that
+churn_tail,churn,MONTHLY,downside,0.08,share of survivors / month,0.06,0.10,benchmark,S13;S15,2026-10-27,Early Spotify (7.5% Q4'15); Duolingo monthly 4.5-month average lifetime
+annual_renewal_first,churn,ANNUAL,base,0.45,share renewing,0.36,0.55,benchmark,S15;S16,2026-10-27,Duolingo ~40% first renewal; RevenueCat cheap annual up to 36%. Nitro set slightly above as a habit product
+annual_renewal_first,churn,ANNUAL,upside,0.55,share renewing,0.45,0.65,benchmark,S15;A01,2026-10-27,
+annual_renewal_first,churn,ANNUAL,downside,0.35,share renewing,0.30,0.40,benchmark,S16,2026-10-27,
+annual_renewal_later,churn,ANNUAL,base,0.65,share renewing,0.55,0.75,proposed,A01,2026-10-27,No public second-renewal data found; tenured renewers are stickier
+annual_renewal_later,churn,ANNUAL,upside,0.75,share renewing,0.65,0.85,proposed,A01,2026-10-27,
+annual_renewal_later,churn,ANNUAL,downside,0.55,share renewing,0.45,0.65,proposed,A01,2026-10-27,
+react_rate,reactivation,all,base,0.015,share of churned pool / month,0.005,0.03,proposed,A01,2026-10-27,No public win-back data; churned users within the window return at this rate
+react_rate,reactivation,all,upside,0.020,share of churned pool / month,0.01,0.03,proposed,A01,2026-10-27,
+react_rate,reactivation,all,downside,0.010,share of churned pool / month,0.005,0.02,proposed,A01,2026-10-27,
+react_window_months,reactivation,all,all,24,months,12,36,proposed,A01,2026-10-27,Churned users older than this drop out of the pool
+react_churn_tail,reactivation,all,all,0.07,share of survivors / month,0.05,0.10,proposed,A01,2026-10-27,Reactivated users rejoin on monthly plans; flatter than new-user month-1 churn but above base tail
+open_subs,opening_book,all,all,6.75,M subscribers,6.0,7.3,derived,S01;S02;S03,2026-10-27,Jan 2025 book = 7.3M mid-2025 / 1.17^0.5 (17% YoY growth per Feedough)
+open_plan_mix,opening_book,NITRO_M,all,0.40,share,0.30,0.50,proposed,A01,2026-10-27,Tenured book skews to annual vs gross adds
+open_plan_mix,opening_book,NITRO_A,all,0.22,share,0.12,0.30,proposed,A01,2026-10-27,
+open_plan_mix,opening_book,BASIC_M,all,0.28,share,0.20,0.40,proposed,A01,2026-10-27,
+open_plan_mix,opening_book,BASIC_A,all,0.10,share,0.05,0.15,proposed,A01,2026-10-27,
+open_region_mix,opening_book,US_CA,all,0.45,share,0.38,0.52,proposed,A01,2026-10-27,Payers skew to high-income regions vs MAU mix
+open_region_mix,opening_book,EUROPE,all,0.30,share,0.25,0.35,proposed,A01,2026-10-27,
+open_region_mix,opening_book,LATAM,all,0.08,share,0.05,0.12,proposed,A01,2026-10-27,
+open_region_mix,opening_book,APAC,all,0.10,share,0.06,0.14,proposed,A01,2026-10-27,
+open_region_mix,opening_book,ROW,all,0.07,share,0.04,0.10,proposed,A01,2026-10-27,
+open_y1_share,opening_book,all,all,0.35,share of book in first year of tenure,0.25,0.45,proposed,A01,2026-10-28,"Drives the Apple 30% vs 15% fee split for the opening book only; new cohorts get tenure from the cohort engine"
+open_churn_tail,opening_book,MONTHLY,base,0.035,share / month,0.025,0.05,benchmark,S13;S14,2026-10-27,Tenured monthly subscribers: between Spotify global (3.9%) and mature (1-2%)
+open_churn_tail,opening_book,MONTHLY,upside,0.025,share / month,0.015,0.035,benchmark,S14,2026-10-27,
+open_churn_tail,opening_book,MONTHLY,downside,0.050,share / month,0.035,0.06,benchmark,S13,2026-10-27,
+list_price,pricing,NITRO_M,all,9.99,USD / month,,,verified,S08;S09,2026-07-01,US list price; unchanged for years
+list_price,pricing,NITRO_A,all,99.99,USD / year,,,verified,S08;S09,2026-07-01,~17% below 12x monthly
+list_price,pricing,BASIC_M,all,2.99,USD / month,,,verified,S08;S09,2026-07-01,
+list_price,pricing,BASIC_A,all,29.99,USD / year,,,verified,S08;S09,2026-07-01,
+price_index,pricing,US_CA,all,1.00,x US price in USD at 2025 avg FX,,,design,P01,2026-10-27,Reference market
+price_index,pricing,EUROPE,all,1.10,x US price in USD at 2025 avg FX,1.00,1.15,proposed,A01,2026-10-27,Assumes EUR 9.99 VAT-inclusive (~$11.30 at 2025 avg FX). EUR price NOT verified: check at checkout
+price_index,pricing,LATAM,all,0.45,x US price in USD at 2025 avg FX,0.30,0.60,proposed,S10;A01,2026-10-27,Localized pricing exists in Brazil per forum posts; level unverified
+price_index,pricing,APAC,all,0.75,x US price in USD at 2025 avg FX,0.50,1.00,proposed,S10;A01,2026-10-27,Japan localized; India reportedly not localized (~INR 850 = ~$10)
+price_index,pricing,ROW,all,0.60,x US price in USD at 2025 avg FX,0.30,0.80,proposed,S10;A01,2026-10-27,Turkey ~$3.20 per forum anecdote; RoW blends deep and no discounts
+indirect_tax,pricing,US_CA,all,0.00,share of gross price,,,design,P01,2026-10-27,US sales tax is added on top of list price so it is not in revenue
+indirect_tax,pricing,EUROPE,all,0.167,share of gross price,0.15,0.18,proposed,A01,2026-10-27,Prices shown VAT-inclusive. A ~20% VAT rate removes 0.20/1.20 = 16.7% of the gross price; EU rates run 17-27%
+indirect_tax,pricing,LATAM,all,0.12,share of gross price,0.05,0.20,proposed,A01,2026-10-27,Digital services taxes vary by country
+indirect_tax,pricing,APAC,all,0.10,share of gross price,0.05,0.15,proposed,A01,2026-10-27,Japan consumption tax 10%; India GST 18%
+indirect_tax,pricing,ROW,all,0.10,share of gross price,0.05,0.20,proposed,A01,2026-10-27,
+trial_share,promo,all,all,0.15,share of gross adds starting on a free trial,0.00,0.40,proposed,A01,2026-10-28,"Partner promos and free trial months. Trialists pay $0 while in trial, then convert or leave"
+trial_months,promo,all,all,1,months,1,3,proposed,A01,2026-10-28,Length of the free period
+trial_to_paid,promo,all,base,0.40,share of trialists converting to paid,0.25,0.60,proposed,S16;A01,2026-10-28,No public Discord rate. RevenueCat (S16) shows trial conversion clusters at install day but the rate is not in the public preview
+trial_to_paid,promo,all,upside,0.50,share of trialists converting to paid,0.25,0.60,proposed,A01,2026-10-28,
+trial_to_paid,promo,all,downside,0.30,share of trialists converting to paid,0.25,0.60,proposed,A01,2026-10-28,
+count_trials_as_subs,promo,all,all,1,flag,0,1,proposed,S13;A01,2026-10-28,Definition: does the 7.3M anchor count trialists? Spotify counts trialists as subscribers (S13). Unknown for the third-party Discord figure
+avg_discount,promo,all,all,0.05,share of list price,0.00,0.15,proposed,A01,2026-10-27,Average discount on paying subscribers (sale pricing; first-month offers)
+store_fee,fees,IOS_Y1,all,0.30,share of gross,,,verified,S11,2026-10-27,Apple standard rate in subscriber's first year
+store_fee,fees,IOS_LATER,all,0.15,share of gross,,,verified,S11,2026-10-27,Apple rate after a subscriber's first year
+store_fee,fees,ANDROID,all,0.15,share of gross,,,verified,S12,2026-10-27,Google Play subscriptions 15% from day one (10% service + 5% billing in US/UK/EEA from 2026-06-30)
+store_fee,fees,WEB,all,0.03,share of gross,0.02,0.04,proposed,A01,2026-10-27,Card processing on direct web/desktop billing
+fx_weight,fx,US_CA|USD,all,1.00,weight,,,design,P01,2026-10-27,Region currency basket
+fx_weight,fx,EUROPE|EUR,all,1.00,weight,,,design,P01,2026-10-27,GBP/PLN etc proxied by EUR
+fx_weight,fx,LATAM|BRL,all,1.00,weight,,,design,P01,2026-10-27,Brazil as proxy for LatAm currencies
+fx_weight,fx,APAC|JPY,all,0.50,weight,0.3,0.7,proposed,A01,2026-10-27,APAC basket: JPY/INR blend
+fx_weight,fx,APAC|INR,all,0.50,weight,0.3,0.7,proposed,A01,2026-10-27,
+fx_weight,fx,ROW|USD,all,1.00,weight,,,design,P01,2026-10-27,RoW priced in USD
+fx_avg_2025,fx,EUR,all,0.884486,local per USD,,,verified,S17,2026-10-27,FRED AEXUSEU 1.1306 USD per EUR inverted
+fx_avg_2025,fx,JPY,all,149.5686,local per USD,,,verified,S17,2026-10-27,FRED AEXJPUS
+fx_avg_2025,fx,BRL,all,5.5891,local per USD,,,verified,S17,2026-10-27,FRED AEXBZUS
+fx_avg_2025,fx,INR,all,87.1468,local per USD,,,verified,S17,2026-10-27,FRED AEXINUS
+fx_avg_2025,fx,USD,all,1,local per USD,,,design,P01,2026-10-27,
+fx_spot,fx,EUR,all,0.890869,local per USD,,,verified,S18,2026-10-19,1/1.1225
+fx_spot,fx,JPY,all,158.2450,local per USD,,,verified,S18,2026-10-19,177.63 / 1.1225
+fx_spot,fx,BRL,all,5.045256,local per USD,,,verified,S18,2026-10-19,5.6633 / 1.1225
+fx_spot,fx,INR,all,94.930067,local per USD,,,verified,S18,2026-10-19,106.559 / 1.1225
+fx_spot,fx,USD,all,1,local per USD,,,design,P01,2026-10-27,
+fx_spot_month_index,fx,all,all,22,month index (Jan 2025 = 1),,,design,P01,2026-10-27,Path: 2025 at FY avg; Jan-Oct 2026 linear to spot; Nov 2026+ covered-interest-parity forward from spot
+policy_rate,fx,USD,all,0.03625,annual,0.035,0.0375,anchor,S19,2026-06-30,Fed 3.50-3.75% midpoint; stale (June 2026) and low-authority source
+policy_rate,fx,EUR,all,0.024,annual,0.0225,0.024,anchor,S19,2026-06-30,ECB MRO 2.40% (deposit 2.25%)
+policy_rate,fx,JPY,all,0.01,annual,0.0075,0.01,anchor,S19,2026-06-30,Sources conflict: 1.00% vs 0.75%
+policy_rate,fx,BRL,all,0.1425,annual,0.13,0.15,anchor,S19,2026-06-30,Selic
+policy_rate,fx,INR,all,0.055,annual,0.05,0.06,anchor,S19,2026-06-30,RBI repo
+fx_shock,fx,all,all,0.10,USD move,,,design,P01,2026-10-27,PRD: +/-10% USD shock applied from Nov 2026
+exp_enabled,experiment,all,all,0,flag,,,design,P01,2026-10-27,Off by default
+exp_start_month_index,experiment,all,all,25,month index (Jan 2025 = 1),,,design,P01,2026-10-27,Jan 2027
+exp_conv_lift,experiment,all,all,0.05,relative,0,0.15,proposed,A01,2026-10-27,Example: new perk lifts conversion 5% relative (hypothetical A/B readout)
+exp_churn_change,experiment,all,all,-0.03,relative,-0.10,0.05,proposed,A01,2026-10-27,Negative = lower churn
+exp_price_change,experiment,all,all,0.00,relative,-0.20,0.20,proposed,A01,2026-10-27,Set e.g. 0.10 to test a 10% price increase
+cal_subs_mid2025,calibration,all,all,7.3,M subscribers,6.57,8.03,anchor,S01;S02;S03,2025-06-30,Single most-repeated figure; test band +/-10%
+cal_subs_growth_2025,calibration,all,all,0.17,YoY,0.10,0.25,anchor,S02,2025-11-20,
+cal_nitro_rev_2025,calibration,all,all,365,USD M,280,450,anchor,S02;S03,2026-07-24,"Value = midpoint, for reference only. Test: FY2025 modeled revenue must land in [low, high]"
+ctx_total_rev_2025,context,all,all,561,USD M,561,1200,anchor,S02;S03;S05,2026-07-24,"Low cluster $561M (Feedough); high cluster $879M-$1.2B (Resourcera, Revenue Memo)"
+ctx_arr_end2024,context,all,all,725,USD M,600,879,anchor,S04,2026-10-27,Sacra estimate; inconsistent with $561M 2025 revenue at +29% growth
+ctx_boosts_rev_2025,context,all,all,430,USD M,430,520,anchor,S03,2026-07-24,Server Boosts per Resourcera; out of scope beyond this context line
