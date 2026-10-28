@@ -14,7 +14,7 @@
   --c2025: #86b6ef; --c2026: #3987e5; --c2027: #1c5cab; --c2028: #0d366b;
   --opening: #c3c2b7; --react: #eb6834; --trial: #1baf7a;
   --good: #0ca30c; --good-ink: #006300; --critical: #d03b3b; --band: rgba(42,120,214,0.10);
-  --accent-soft: #eaf2fc;
+  --accent-soft: #eaf2fc; --neg: #e34948;
 }
 @media (prefers-color-scheme: dark) {
   :root:where(:not([data-theme="light"])) {
@@ -25,7 +25,7 @@
     --c2025: #6da7ec; --c2026: #3987e5; --c2027: #256abf; --c2028: #184f95;
     --opening: #52514e; --react: #d95926; --trial: #199e70;
     --good: #0ca30c; --good-ink: #0ca30c; --critical: #e66767; --band: rgba(57,135,229,0.16);
-    --accent-soft: #16263a;
+    --accent-soft: #16263a; --neg: #e66767;
   }
 }
 :root[data-theme="dark"] {
@@ -36,7 +36,7 @@
   --c2025: #6da7ec; --c2026: #3987e5; --c2027: #256abf; --c2028: #184f95;
   --opening: #52514e; --react: #d95926; --trial: #199e70;
   --good: #0ca30c; --good-ink: #0ca30c; --critical: #e66767; --band: rgba(57,135,229,0.16);
-  --accent-soft: #16263a;
+  --accent-soft: #16263a; --neg: #e66767;
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--page); color: var(--ink);
@@ -120,6 +120,9 @@ td { font-variant-numeric: tabular-nums; }
 .pills { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 8px; }
 .pills button { font-size: 12px; padding: 3px 10px; border-radius: 999px; }
 .pills button[aria-selected="true"] { background: var(--accent-soft); color: var(--series-1); border-color: var(--series-1); font-weight: 600; }
+.exp-box { border-top: 1px solid var(--grid); border-bottom: 1px solid var(--grid); padding: 4px 0 2px; margin: 4px 0 8px; }
+.card h2 + .seg { margin-top: 8px; }
+tr.mine td { font-weight: 600; color: var(--series-1); }
 .note { font-size: 13px; color: var(--ink-2); margin: 8px 0 12px; }
 .split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
 @media (max-width: 700px) { .split { grid-template-columns: minmax(0, 1fr); } }
@@ -142,12 +145,22 @@ footer { margin-top: 24px; font-size: 12px; color: var(--muted); }
   <div class="layout">
     <aside>
       <div class="card">
-        <h2>Assumptions</h2>
-        <p class="sub">Each slider is bounded by the low/high range documented in <code>assumptions.csv</code>. The tag shows how well-evidenced it is.</p>
+        <h2>Scenario</h2>
+        <div class="seg" role="radiogroup" aria-label="Scenario" id="scen">
+          <button type="button" data-v="downside" role="radio">Downside</button>
+          <button type="button" data-v="base" role="radio" aria-checked="true">Base</button>
+          <button type="button" data-v="upside" role="radio">Upside</button>
+        </div>
+        <p class="sub" id="scen-desc"></p>
+        <h2>Forecast assumptions, from Jan 2026</h2>
+        <p class="sub">FY2025 is calibrated to public anchors and stays fixed. Each slider spans the documented low/high range across scenarios; the tag shows how well-evidenced it is.</p>
         <fieldset id="controls" disabled>
           <div id="sliders"></div>
-          <label class="toggle"><input type="checkbox" id="recal" checked>
-            <span>Re-solve conversion to hit the 7.3M anchor<small>Only conversion is fitted. Raise churn and conversion rises to compensate; one anchor can't pin both.</small></span></label>
+          <div class="exp-box">
+            <label class="toggle"><input type="checkbox" id="exp">
+              <span>Run a product experiment from Jan 2027<small>A hypothetical test readout: conversion and churn effects apply to new sign-ups, a price change to everyone.</small></span></label>
+            <div id="exp-sliders"></div>
+          </div>
           <label class="toggle"><input type="checkbox" id="trials">
             <span>Count free-trial users as subscribers<small>Whether third-party "7.3M" counts trialists is unknown; Spotify counts them.</small></span></label>
           <div class="seg-label">FX from Nov 2026</div>
@@ -156,7 +169,7 @@ footer { margin-top: 24px; font-size: 12px; color: var(--muted); }
             <button type="button" data-v="0" role="radio" aria-checked="true">Forwards</button>
             <button type="button" data-v="1" role="radio">USD +10%</button>
           </div>
-          <button id="reset" type="button">Reset to base case</button>
+          <button id="reset" type="button">Reset to scenario defaults</button>
         </fieldset>
       </div>
     </aside>
@@ -169,6 +182,26 @@ footer { margin-top: 24px; font-size: 12px; color: var(--muted); }
         <p class="sub">After discounts, VAT, app store fees and FX. The shaded band is the range of public estimates for FY2025.</p>
         <div class="legend" id="rev-legend"></div>
         <div class="chart" id="rev-chart"></div>
+      </section>
+
+      <section class="card">
+        <h2>What moves FY2026–30 revenue versus the base case</h2>
+        <p class="sub" id="bridge-sub">Cumulative net revenue over the five forecast years. Each bar changes one group of drivers, in the order shown, so the bars add up exactly.</p>
+        <div class="chart" id="bridge-chart"></div>
+        <p class="note" id="bridge-note"></p>
+      </section>
+
+      <section class="card">
+        <h2>Scenarios side by side</h2>
+        <p class="sub">FY2025 is the same in every scenario; they diverge from Jan 2026.</p>
+        <div class="tablewrap"><table id="scen-table"></table></div>
+      </section>
+
+      <section class="card">
+        <h2>Which assumptions matter most</h2>
+        <p class="sub" id="tornado-sub">Change in FY2026–30 revenue when one assumption moves to the end of its documented range, everything else held at the scenario's defaults.</p>
+        <div class="legend"><span><i style="background:var(--series-1)"></i>Assumption at its low end</span><span><i style="background:var(--react)"></i>Assumption at its high end</span></div>
+        <div class="chart" id="tornado-chart"></div>
       </section>
 
       <section class="card">
@@ -214,7 +247,7 @@ footer { margin-top: 24px; font-size: 12px; color: var(--muted); }
       </section>
     </main>
   </div>
-  <footer>Milestone 3 of 5: base case with FX paths. Scenarios and the driver bridge are still to come.</footer>
+  <footer>Milestone 4 of 5: scenarios, experiment, driver bridge and sensitivity. The exec memo is still to come.</footer>
 </div>
 <script src="app.js"></script>
 </body>

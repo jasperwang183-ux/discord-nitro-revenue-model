@@ -17,6 +17,18 @@ def test_opening_equals_prior_closing(result):
     np.testing.assert_allclose(result["opening"][..., 1:], result["closing"][..., :-1])
 
 
+@pytest.mark.parametrize("overrides", [
+    {"scenario_inputs": "upside"}, {"scenario_inputs": "downside"},
+    {"exp_enabled": 1}, {"exp_enabled": 1, "exp_churn_change": 0.05, "exp_price_change": 0.1},
+])
+def test_rollforward_holds_in_scenarios_and_experiment(assumptions, params, overrides):
+    from nitro_model.params import build_params
+
+    o = dict(overrides)
+    p = build_params(assumptions, o.pop("scenario_inputs")) if "scenario_inputs" in o else params
+    assert np.abs(_gap(run(p | o))).max() < 1e-3
+
+
 @pytest.mark.parametrize("count_trials", [0, 1])
 @pytest.mark.parametrize("trial_months", [1, 3])
 def test_rollforward_holds_under_both_trial_definitions(params, count_trials, trial_months):
@@ -37,6 +49,6 @@ def test_trialists_only_counted_when_flag_on(params):
 
 
 def test_annual_cohort_keeps_everyone_until_first_renewal(result):
-    s = result["survival"][1]  # NITRO_A
+    s = result["survivals"][0][1]  # history era, NITRO_A
     assert (s[:12] == 1).all()
     assert s[12] == pytest.approx(0.45) and s[24] == pytest.approx(0.45 * 0.65)

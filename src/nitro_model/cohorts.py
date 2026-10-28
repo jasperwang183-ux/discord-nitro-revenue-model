@@ -66,11 +66,49 @@ def window(x: np.ndarray, kernel: np.ndarray) -> np.ndarray:
     return y
 
 
-def plan_curves(p: dict, T: int) -> tuple[np.ndarray, np.ndarray]:
-    """Survival and churn kernels per plan: [P, T]."""
-    ms, an = monthly_survival(p, T), annual_survival(p, T)
-    surv = np.array([an if annual else ms for annual in p["is_annual"]])
+def plan_curves(e: dict, is_annual: list, T: int) -> tuple[np.ndarray, np.ndarray]:
+    """Survival and churn kernels per plan for one era's drivers: [P, T]."""
+    ms, an = monthly_survival(e, T), annual_survival(e, T)
+    surv = np.array([an if annual else ms for annual in is_annual])
     return surv, np.array([churn_kernel(s) for s in surv])
+
+
+# ---------- eras: history, forecast, experiment ----------
+
+CHURN_KEYS = ("churn_m1", "churn_m2", "churn_m3", "churn_tail")
+RENEWAL_KEYS = ("annual_renewal_first", "annual_renewal_later")
+
+
+def era_params(p: dict) -> list[dict]:
+    """Driver values for [history, forecast, experiment]. The experiment scales forecast churn hazards and annual
+    non-renewal by (1 + exp_churn_change); everything else in it equals the forecast."""
+    hist = p["hist"]
+    fcst = {k: p[k] for k in hist}
+    cc = p["exp_churn_change"]
+    exp = dict(fcst)
+    for k in CHURN_KEYS:
+        exp[k] = min(1.0, fcst[k] * (1 + cc))
+    for k in RENEWAL_KEYS:
+        exp[k] = 1 - min(1.0, (1 - fcst[k]) * (1 + cc))
+    return [hist, fcst, exp]
+
+
+def era_masks(p: dict, T: int) -> np.ndarray:
+    """[3, T] one-hot: which era each calendar month belongs to. The experiment only runs in the forecast period."""
+    t = np.arange(T)
+    hist = t < p["forecast_start_t"]
+    exp = (~hist) & bool(p["exp_enabled"]) & (t >= p["exp_start_t"])
+    return np.array([hist, ~hist & ~exp, exp], dtype=float)
+
+
+def by_month(eras: list[dict], masks: np.ndarray, key: str) -> np.ndarray:
+    """A driver as a monthly vector, taking each month's era value."""
+    return sum(masks[i] * e[key] for i, e in enumerate(eras))
+
+
+def by_era(x: np.ndarray, masks: np.ndarray, kernels: list[np.ndarray]) -> np.ndarray:
+    """Convolve each era's cohorts with that era's curve: cohorts keep the behavior of the era they started in."""
+    return sum(window(x * masks[i], k) for i, k in enumerate(kernels))
 
 
 # ---------- prices ----------
@@ -124,9 +162,12 @@ def fx_index(p: dict, T: int) -> np.ndarray:
 # ---------- engine ----------
 
 def mau_path(p: dict, T: int) -> np.ndarray:
+    """FY2025 grows at mau_growth_2025; forecast years fade linearly from mau_growth_first to mau_growth_last."""
     years = T // 12
     yr = np.arange(T) // 12
-    g = p["mau_growth_first"] + (p["mau_growth_last"] - p["mau_growth_first"]) * yr / max(years - 1, 1)
+    fade = (yr - 1) / max(years - 2, 1)
+    g = np.where(yr == 0, p["mau_growth_2025"],
+                 p["mau_growth_first"] + (p["mau_growth_last"] - p["mau_growth_first"]) * fade)
     factor = (1 + g) ** (1 / 12)
     factor[0] = 1.0
     return p["mau0"] * np.cumprod(factor)
@@ -148,31 +189,33 @@ def run(p: dict, k_cal: float | None = None) -> dict:
     t = np.arange(T)
 
     mau = mau_path(p, T)
+    eras, masks = era_params(p), era_masks(p, T)
+    conv = by_month(eras, masks, "conv_multiplier") * (1 + p["exp_conv_lift"] * masks[2])
     mau_r = np.array(p["mau_share"])[:, None] * mau[None, :]
-    gross_adds = (mau_r * (np.array(p["conv_rate"]) * p["conv_multiplier"] * k_cal)[:, None])[:, None, :] \
-        * np.array(p["plan_mix"])[None, :, None]
+    gross_adds = (mau_r * np.array(p["conv_rate"])[:, None] * conv[None, :] * k_cal)[:, None, :]         * np.array(p["plan_mix"])[None, :, None]
 
-    # trials
+    # trials (share and conversion follow the era the trial started in)
     k = p["trial_months"]
-    trial_starts = gross_adds * p["trial_share"]
+    trial_starts = gross_adds * by_month(eras, masks, "trial_share")
     direct = gross_adds - trial_starts
     trial_ending = shift(trial_starts, k)
-    trial_converted = trial_ending * p["trial_to_paid"]
+    trial_converted = shift(trial_starts * by_month(eras, masks, "trial_to_paid"), k)
     trial_lost = trial_ending - trial_converted
     trial_active = np.cumsum(trial_starts, axis=-1) - np.cumsum(trial_ending, axis=-1)
 
     # paid cohorts
-    surv, churn_k = plan_curves(p, T)
+    curves = [plan_curves(e, p["is_annual"], T) for e in eras]
+    survs = [c[0] for c in curves]
     paid_starts = direct + trial_converted
-    paid_active = window(paid_starts, surv)
-    paid_active_y1 = window(paid_starts, np.where(t < 12, surv, 0.0))
-    paid_churn = window(paid_starts, churn_k)
+    paid_active = by_era(paid_starts, masks, survs)
+    paid_active_y1 = by_era(paid_starts, masks, [np.where(t < 12, s, 0.0) for s in survs])
+    paid_churn = by_era(paid_starts, masks, [c[1] for c in curves])
 
-    # opening book
+    # opening book (customers from before the model starts keep history behavior in every scenario)
     L0 = p["open_subs"] * np.array(p["open_region_mix"])[:, None] * np.array(p["open_plan_mix"])[None, :]
     q, m = t // 12, t % 12
     legacy_monthly = (1 - p["open_churn_tail"]) ** (t + 1)
-    rl = p["annual_renewal_later"]
+    rl = p["hist"]["annual_renewal_later"]
     legacy_annual = ((m + 1) * rl ** (q + 1) + (11 - m) * rl ** q) / 12
     legacy_curve = np.array([legacy_annual if annual else legacy_monthly for annual in p["is_annual"]])
     legacy = L0[:, :, None] * legacy_curve[None, :, :]
@@ -180,15 +223,15 @@ def run(p: dict, k_cal: float | None = None) -> dict:
     legacy_churn = legacy_prev - legacy
     legacy_y1_frac = p["open_y1_share"] * np.maximum(0.0, 1 - t / 12)
 
-    # reactivation
-    react_out = window(paid_churn + legacy_churn, react_kernel(p, T))
+    # reactivation (pool rate follows the churn month's era; returning users follow the return month's era)
+    react_out = by_era(paid_churn + legacy_churn, masks, [react_kernel(e, T) for e in eras])
     react_starts = np.zeros_like(react_out)
     for src, dst in enumerate(p["react_into"]):
         react_starts[:, dst, :] += react_out[:, src, :]
-    rs = react_survival(p, T)
-    react_active = window(react_starts, rs)
-    react_active_y1 = window(react_starts, np.where(t < 12, rs, 0.0))
-    react_churn = window(react_starts, churn_kernel(rs))
+    rss = [react_survival(e, T) for e in eras]
+    react_active = by_era(react_starts, masks, rss)
+    react_active_y1 = by_era(react_starts, masks, [np.where(t < 12, s, 0.0) for s in rss])
+    react_churn = by_era(react_starts, masks, [churn_kernel(s) for s in rss])
 
     # roll-forward (counted definition)
     cnt = p["count_trials_as_subs"]
@@ -198,11 +241,12 @@ def run(p: dict, k_cal: float | None = None) -> dict:
     churned = legacy_churn + paid_churn + react_churn + (trial_lost if cnt else 0.0)
     opening = np.concatenate([L0[:, :, None], closing[:, :, :-1]], axis=-1)
 
-    # revenue
+    # revenue (the experiment's price change applies to every paying subscriber from its start month)
     p_y1, p_later = net_prices(p)
     fx = fx_index(p, T)
+    price = 1 + p["exp_price_change"] * masks[2]
     y1 = paid_active_y1 + react_active_y1 + legacy * legacy_y1_frac
-    revenue = (y1 * p_y1[:, :, None] + (paying - y1) * p_later[:, :, None]) * fx[:, None, :]
+    revenue = (y1 * p_y1[:, :, None] + (paying - y1) * p_later[:, :, None]) * (fx * price)[:, None, :]
 
     return {
         "k_cal": k_cal, "months": p["months"], "mau": mau, "gross_adds": gross_adds,
@@ -211,9 +255,9 @@ def run(p: dict, k_cal: float | None = None) -> dict:
         "legacy": legacy, "legacy_churn": legacy_churn, "react_out": react_out, "react_starts": react_starts,
         "react_active": react_active, "react_churn": react_churn,
         "opening": opening, "new": new, "reactivated": react_starts, "churned": churned, "closing": closing,
-        "paying": paying, "paying_y1": y1, "revenue": revenue, "fx_index": fx,
+        "paying": paying, "paying_y1": y1, "revenue": revenue, "fx_index": fx, "price_factor": price,
         "net_price_y1": p_y1, "net_price_later": p_later,
-        "survival": surv, "react_survival": rs,
+        "masks": masks, "survivals": survs, "react_survivals": rss,
     }
 
 
@@ -232,9 +276,11 @@ def calibrate(p: dict) -> float:
 def cohort_triangle(p: dict, res: dict) -> np.ndarray:
     """Paid cohorts one by one: [R, P, cohort, month]. Independent of `window`, used to tie out paid_active."""
     T = len(p["months"])
-    starts, surv = res["paid_starts"], res["survival"]
+    starts = res["paid_starts"]
+    era_of = res["masks"].argmax(axis=0)
     tri = np.zeros(starts.shape[:2] + (T, T))
     for c in range(T):
+        surv = res["survivals"][era_of[c]]
         tri[:, :, c, c:] = starts[:, :, c : c + 1] * surv[None, :, : T - c]
     return tri
 
@@ -259,13 +305,13 @@ def layers(p: dict, res: dict) -> dict:
     for y in range(LAYER_FOLD_FROM + 1):
         label = str(start + y) if y < LAYER_FOLD_FROM else f"{start + y}-{str(start + T // 12 - 1)[2:]}"
         starts = res["paid_starts"] * (years == y)
-        out[f"Signed up {label}"] = window(starts, res["survival"]).sum(axis=(0, 1)).tolist()
+        out[f"Signed up {label}"] = by_era(starts, res["masks"], res["survivals"]).sum(axis=(0, 1)).tolist()
     out["Reactivated"] = res["react_active"].sum(axis=(0, 1)).tolist()
     out["In free trial"] = (p["count_trials_as_subs"] * res["trial_active"]).sum(axis=(0, 1)).tolist()
     return out
 
 
-WALK_STEPS = ["US list price", "Regional pricing", "Discounts", "VAT", "App store & card fees", "FX"]
+WALK_STEPS = ["US list price", "Price change", "Regional pricing", "Discounts", "VAT", "App store & card fees", "FX"]
 
 
 def _yearly(x: np.ndarray) -> np.ndarray:
@@ -286,18 +332,21 @@ def drivers(p: dict, res: dict) -> dict:
     keep_y1, keep_later, mix = store_keep(p)
     k1, k2 = keep_y1.sum(axis=1)[:, None, None], keep_later.sum(axis=1)[:, None, None]
     fx = res["fx_index"][:, None, :]
+    pf = res["price_factor"][None, None, :]
 
-    unit_net_vat = lst * idx * (1 - p["avg_discount"]) * (1 - tax)
+    unit_net_vat = lst * pf * idx * (1 - p["avg_discount"]) * (1 - tax)
     levels = [
         paying * lst,
-        paying * lst * idx,
-        paying * lst * idx * (1 - p["avg_discount"]),
+        paying * lst * pf,
+        paying * lst * pf * idx,
+        paying * lst * pf * idx * (1 - p["avg_discount"]),
         paying * unit_net_vat,
         unit_net_vat * (y1 * k1 + later * k2),
         unit_net_vat * (y1 * k1 + later * k2) * fx,
     ]
     sub_years = _yearly(paying.sum(axis=(0, 1))) / 12
     walk = {name: (_yearly(lv.sum(axis=(0, 1))) / sub_years).tolist() for name, lv in zip(WALK_STEPS, levels)}
+    steps = [s for s in WALK_STEPS if s != "Price change" or np.any(res["price_factor"] != 1)]
     counted_years = _yearly(res["closing"].sum(axis=(0, 1))) / 12
     rev_y = _yearly(res["revenue"].sum(axis=(0, 1)))
 
@@ -311,7 +360,7 @@ def drivers(p: dict, res: dict) -> dict:
     seg_rev, seg_subs = _yearly(res["revenue"]), _yearly(paying) / 12
     safe = lambda a, b: np.where(b > 0, a / np.where(b > 0, b, 1), 0.0)  # noqa: E731
     return {
-        "walk_steps": WALK_STEPS,
+        "walk_steps": steps,
         "walk": walk,
         "per_counted_sub": (rev_y / counted_years).tolist(),
         "by_platform": by_platform,
@@ -322,8 +371,71 @@ def drivers(p: dict, res: dict) -> dict:
     }
 
 
-def payload(p: dict, k_cal: float | None = None) -> dict:
-    """Everything the website draws for one set of inputs, plus the live checks."""
+# ---------- scenarios: bridge and sensitivity ----------
+
+BRIDGE_GROUPS = [
+    ("Subscriber definition", ["count_trials_as_subs"]),
+    ("MAU growth", ["mau_growth_first", "mau_growth_last"]),
+    ("Conversion", ["conv_multiplier"]),
+    ("Free trials", ["trial_share", "trial_to_paid"]),
+    ("Retention", ["churn_m1", "churn_m2", "churn_m3", "churn_tail", "annual_renewal_first", "annual_renewal_later"]),
+    ("Reactivation", ["react_rate", "react_window_months", "react_churn_tail"]),
+    ("Experiment", ["exp_enabled", "exp_start_t", "exp_conv_lift", "exp_churn_change", "exp_price_change"]),
+    ("FX", ["fx_shock_dir"]),
+]
+
+
+def forecast_revenue(res: dict, p: dict) -> float:
+    """Cumulative net revenue over the forecast period (FY2026-FY2030): the bridge and sensitivity metric."""
+    return float(res["revenue"][..., p["forecast_start_t"]:].sum())
+
+
+def bridge(p_from: dict, p_to: dict) -> dict:
+    """Walk 5-year forecast revenue from one set of inputs to another, one driver group at a time.
+
+    Sequential substitution in BRIDGE_GROUPS order: each step's size depends on the steps before it, so the order is
+    fixed and stated. Anything that differs outside the groups lands in a final "Other" step, so the bridge always ties.
+    """
+    # Calibration only sees FY2025 inputs (history drivers and the subscriber definition), so solve it once per
+    # distinct set of those and reuse it: the bridge reruns the model per group and must stay fast in the browser.
+    solved: dict[str, float] = {}
+
+    def revenue_of(q: dict) -> float:
+        key = repr((q["hist"], q["count_trials_as_subs"]))
+        if key not in solved:
+            solved[key] = calibrate(q)
+        return forecast_revenue(run(q, solved[key]), q)
+
+    cur = dict(p_from)
+    start = prev = revenue_of(cur)
+    steps = []
+    for name, keys in BRIDGE_GROUPS:
+        if all(cur[k] == p_to[k] for k in keys):
+            continue
+        cur = cur | {k: p_to[k] for k in keys}
+        v = revenue_of(cur)
+        steps.append({"name": name, "delta": v - prev})
+        prev = v
+    end = revenue_of(dict(p_to))
+    if abs(end - prev) > 1.0:
+        steps.append({"name": "Other", "delta": end - prev})
+    return {"start": start, "end": end, "steps": steps}
+
+
+def sensitivity(p: dict, specs: list[dict]) -> list[dict]:
+    """5-year forecast revenue at each slider's documented low and high, everything else held: a tornado."""
+    base = forecast_revenue(run(p), p)
+    out = []
+    for s in specs:
+        lo = forecast_revenue(run(p | {s["key"]: s["low"]}), p)
+        hi = forecast_revenue(run(p | {s["key"]: s["high"]}), p)
+        out.append({"key": s["key"], "label": s["label"], "low": s["low"], "high": s["high"],
+                    "rev_low": lo - base, "rev_high": hi - base, "pct_swing": (max(lo, hi) - min(lo, hi)) / base})
+    return sorted(out, key=lambda r: -r["pct_swing"])
+
+
+def payload(p: dict, k_cal: float | None = None, base: dict | None = None) -> dict:
+    """Everything the website draws for one set of inputs, plus the live checks. With `base`, adds the bridge."""
     res = run(p, k_cal)
     lay = layers(p, res)
     gap = res["opening"] + res["new"] + res["reactivated"] - res["churned"] - res["closing"]
@@ -334,6 +446,8 @@ def payload(p: dict, k_cal: float | None = None) -> dict:
         "summary": summary(res),
         "layers": lay,
         "drivers": drivers(p, res),
+        "forecast_revenue": forecast_revenue(res, p),
+        "bridge": bridge(base, p) if base is not None else None,
         "checks": {
             "rollforward_gap": float(np.abs(gap).max()),
             "cohort_tie_gap": float(np.abs(tie).max()),

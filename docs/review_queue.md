@@ -1,6 +1,6 @@
 # Assumption review queue
 
-77 rows with `status=proposed`, generated from `data/assumptions.csv` by `python -m nitro_model.review_queue`.
+78 rows with `status=proposed`, generated from `data/assumptions.csv` by `python -m nitro_model.review_queue`.
 For each row, fill in Decision: **accept**, **change to X**, or **needs source**. Then update the CSV status.
 
 ## High impact, weakest evidence (24)
@@ -42,9 +42,9 @@ For each row, fill in Decision: **accept**, **change to X**, or **needs source**
 | mau_share | LATAM | all | 0.14 | share | 0.1–0.18 | S07;A01 | Brazil 7.25% of traffic plus rest of LatAm | |
 | mau_share | APAC | all | 0.15 | share | 0.1–0.2 | S07;A01 | India 4.9% of traffic plus Japan/SEA/ANZ | |
 | mau_share | ROW | all | 0.12 | share | 0.08–0.16 | S07;A01 | Turkey, Russia, MENA, Africa | |
-| mau_growth_first | all | base | 0.1 | YoY | 0.06–0.14 | S02;S03;A01 | Tracker YoY 2024-25: 8.7% (Resourcera) to 13.8% (Feedough); applies to 2025 | |
-| mau_growth_first | all | upside | 0.13 | YoY | 0.1–0.16 | S02;A01 | Near the high tracker growth rate | |
-| mau_growth_first | all | downside | 0.06 | YoY | 0.03–0.09 | A01 |  | |
+| mau_growth_first | all | base | 0.08 | YoY | 0.05–0.11 | S02;S03;A01 | Applies to 2026, the first forecast year; fades linearly to mau_growth_last by 2030 | |
+| mau_growth_first | all | upside | 0.11 | YoY | 0.08–0.14 | S02;A01 | Near the high tracker growth rate | |
+| mau_growth_first | all | downside | 0.05 | YoY | 0.02–0.08 | A01 |  | |
 | mau_growth_last | all | base | 0.04 | YoY | 0.02–0.06 | A01 | Applies to 2030; linear fade from first-year growth | |
 | mau_growth_last | all | upside | 0.06 | YoY | 0.04–0.08 | A01 |  | |
 | mau_growth_last | all | downside | 0 | YoY | -0.03–0.02 | A01 | Flat MAU by 2030 | |
@@ -84,10 +84,11 @@ For each row, fill in Decision: **accept**, **change to X**, or **needs source**
 | avg_discount | all | all | 0.05 | share of list price | 0–0.15 | A01 | Average discount on paying subscribers (sale pricing; first-month offers) | |
 | store_fee | WEB | all | 0.03 | share of gross | 0.02–0.04 | A01 | Card processing on direct web/desktop billing | |
 
-## Low impact (6)
+## Low impact (7)
 
 | id | segment | scenario | value | unit | range | sources | notes | Decision |
 |---|---|---|---|---|---|---|---|---|
+| mau_growth_2025 | all | all | 0.1 | YoY | 0.06–0.14 | S02;S03;A01 | Tracker YoY 2024-25: 8.7% (Resourcera) to 13.8% (Feedough). Same in every scenario: FY2025 is the calibration year | |
 | trial_months | all | all | 1 | months | 1–3 | A01 | Length of the free period | |
 | fx_weight | APAC|JPY | all | 0.5 | weight | 0.3–0.7 | A01 | APAC basket: JPY/INR blend | |
 | fx_weight | APAC|INR | all | 0.5 | weight | 0.3–0.7 | A01 |  | |
