@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nitro Revenue Model</title>
+<meta name="description" content="Cohort-based forecast of Discord Nitro subscription revenue, 2025-2030. Independent portfolio project; all Discord figures are third-party estimates.">
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
+  --grid: #e1e0d9; --axis: #c3c2b7; --ring: rgba(11,11,11,0.10);
+  --series-1: #2a78d6; --ghost: #c3c2b7;
+  --c2025: #86b6ef; --c2026: #3987e5; --c2027: #1c5cab; --c2028: #0d366b;
+  --opening: #c3c2b7; --react: #eb6834; --trial: #1baf7a;
+  --good: #0ca30c; --good-ink: #006300; --critical: #d03b3b; --band: rgba(42,120,214,0.10);
+  --accent-soft: #eaf2fc;
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --axis: #383835; --ring: rgba(255,255,255,0.10);
+    --series-1: #3987e5; --ghost: #52514e;
+    --c2025: #6da7ec; --c2026: #3987e5; --c2027: #256abf; --c2028: #184f95;
+    --opening: #52514e; --react: #d95926; --trial: #199e70;
+    --good: #0ca30c; --good-ink: #0ca30c; --critical: #e66767; --band: rgba(57,135,229,0.16);
+    --accent-soft: #16263a;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
+  --grid: #2c2c2a; --axis: #383835; --ring: rgba(255,255,255,0.10);
+  --series-1: #3987e5; --ghost: #52514e;
+  --c2025: #6da7ec; --c2026: #3987e5; --c2027: #256abf; --c2028: #184f95;
+  --opening: #52514e; --react: #d95926; --trial: #199e70;
+  --good: #0ca30c; --good-ink: #0ca30c; --critical: #e66767; --band: rgba(57,135,229,0.16);
+  --accent-soft: #16263a;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--page); color: var(--ink);
+  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+a { color: var(--series-1); }
+.wrap { max-width: 1180px; margin: 0 auto; padding: 24px 16px 48px; }
+header h1 { font-size: 26px; line-height: 1.2; margin: 0 0 6px; }
+header p { margin: 0; color: var(--ink-2); max-width: 760px; }
+.meta { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin-top: 12px; font-size: 13px; }
+.pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px;
+  border: 1px solid var(--ring); background: var(--surface); color: var(--ink-2); }
+.pill .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+.pill.live .dot { background: var(--good); }
+.layout { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 20px; margin-top: 20px; }
+@media (max-width: 860px) { .layout { grid-template-columns: minmax(0, 1fr); } }
+.card { background: var(--surface); border: 1px solid var(--ring); border-radius: 12px; padding: 16px; }
+.card h2 { font-size: 15px; margin: 0 0 2px; }
+.card .sub { color: var(--muted); font-size: 13px; margin: 0 0 12px; }
+aside .card { position: sticky; top: 16px; }
+@media (max-width: 860px) { aside .card { position: static; } aside { order: 2; } }
+.slider { margin: 0 0 14px; }
+.slider .row { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; }
+.slider .val { font-variant-numeric: tabular-nums; font-weight: 600; }
+.slider .val.changed { color: var(--series-1); }
+.slider input[type=range] { width: 100%; margin: 4px 0 0; accent-color: var(--series-1); }
+.slider .src { font-size: 11px; color: var(--muted); display: flex; justify-content: space-between; }
+.chip { font-size: 10px; text-transform: uppercase; letter-spacing: .04em; padding: 0 5px; border-radius: 4px;
+  border: 1px solid var(--ring); color: var(--ink-2); }
+.toggle { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; margin: 10px 0; }
+.toggle input { margin-top: 3px; accent-color: var(--series-1); }
+.toggle small { display: block; color: var(--muted); }
+button { font: inherit; font-size: 13px; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--ring);
+  background: var(--surface); color: var(--ink); cursor: pointer; }
+button:hover { background: var(--accent-soft); }
+fieldset { border: 0; padding: 0; margin: 0; }
+fieldset:disabled { opacity: .55; }
+.tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 980px) { .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.tile .label { font-size: 13px; color: var(--ink-2); }
+.tile .value { font-size: 28px; font-weight: 600; line-height: 1.2; margin: 2px 0; }
+.tile .note { font-size: 12px; color: var(--muted); min-height: 18px; }
+.tile .note.good { color: var(--good-ink); }
+.tile .note.bad { color: var(--critical); }
+.stack { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr); }
+.stack > *, .layout > * { min-width: 0; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--ink-2); margin: 0 0 8px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+.legend i.outline { background: transparent !important; border: 1.5px solid var(--ghost); }
+.chart { position: relative; }
+.chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.chart text { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.tip { position: absolute; pointer-events: none; background: var(--surface); border: 1px solid var(--ring);
+  border-radius: 8px; padding: 8px 10px; font-size: 12px; box-shadow: 0 4px 16px rgba(0,0,0,.12);
+  white-space: nowrap; display: none; z-index: 2; }
+.tip b { display: block; margin-bottom: 4px; color: var(--ink); }
+.tip .r { display: flex; justify-content: space-between; gap: 16px; color: var(--ink-2); }
+.tip .r i { width: 8px; height: 8px; border-radius: 2px; display: inline-block; margin-right: 6px; }
+.tip .r span:last-child { font-variant-numeric: tabular-nums; color: var(--ink); }
+.checks { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.checks li { display: grid; grid-template-columns: 20px 1fr auto; gap: 8px; align-items: baseline; font-size: 13px; }
+.checks .ic { font-weight: 700; }
+.checks .ok .ic { color: var(--good); }
+.checks .no .ic { color: var(--critical); }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.checks .detail { color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; }
+@media (max-width: 560px) { .checks li { grid-template-columns: 20px 1fr; } .checks .detail { grid-column: 2; text-align: left; } }
+.tablewrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { padding: 6px 8px; text-align: right; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+th:first-child, td:first-child { text-align: left; }
+th { color: var(--ink-2); font-weight: 600; }
+td { font-variant-numeric: tabular-nums; }
+.how { font-size: 14px; color: var(--ink-2); }
+.how ol { padding-left: 20px; margin: 8px 0; }
+footer { margin-top: 24px; font-size: 12px; color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Discord Nitro revenue model</h1>
+    <p>A cohort-based forecast of Nitro and Nitro Basic subscription revenue, Jan 2025 to Dec 2030. Move the sliders and the same Python engine that the tests and the Excel workbook check reruns in your browser.</p>
+    <div class="meta">
+      <span class="pill" id="engine"><span class="dot"></span><span id="engine-text">Showing the precomputed base case; loading the Python engine…</span></span>
+      <a href="https://github.com/jasperwang183-ux/discord-nitro-revenue-model">Code and tests</a>
+      <a href="https://github.com/jasperwang183-ux/discord-nitro-revenue-model/raw/main/outputs/Nitro_Revenue_Model.xlsx">Excel workbook</a>
+      <a href="https://github.com/jasperwang183-ux/discord-nitro-revenue-model/blob/main/docs/reconciliation.md">How the estimates were reconciled</a>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside>
+      <div class="card">
+        <h2>Assumptions</h2>
+        <p class="sub">Each slider is bounded by the low/high range documented in <code>assumptions.csv</code>. The tag shows how well-evidenced it is.</p>
+        <fieldset id="controls" disabled>
+          <div id="sliders"></div>
+          <label class="toggle"><input type="checkbox" id="recal" checked>
+            <span>Re-solve conversion to hit the 7.3M anchor<small>Only conversion is fitted. Raise churn and conversion rises to compensate; one anchor can't pin both.</small></span></label>
+          <label class="toggle"><input type="checkbox" id="trials">
+            <span>Count free-trial users as subscribers<small>Whether third-party "7.3M" counts trialists is unknown; Spotify counts them.</small></span></label>
+          <button id="reset" type="button">Reset to base case</button>
+        </fieldset>
+      </div>
+    </aside>
+
+    <main class="stack">
+      <section class="tiles" id="tiles" aria-label="Headline numbers"></section>
+
+      <section class="card">
+        <h2>Net revenue by year</h2>
+        <p class="sub">After discounts, VAT and app store fees, at FY2025 average FX. The shaded band is the range of public estimates for FY2025.</p>
+        <div class="legend" id="rev-legend"></div>
+        <div class="chart" id="rev-chart"></div>
+      </section>
+
+      <section class="card">
+        <h2>Subscribers by where they came from</h2>
+        <p class="sub">Closing subscribers each month. Each sign-up year is a cohort that shrinks along its survival curve; the gray base is the book that existed in Jan 2025.</p>
+        <div class="legend" id="sub-legend"></div>
+        <div class="chart" id="sub-chart"></div>
+      </section>
+
+      <section class="card">
+        <h2>Checks, recomputed on every change</h2>
+        <p class="sub">The same checks the test suite and the workbook's Checks sheet run.</p>
+        <ul class="checks" id="checks"></ul>
+      </section>
+
+      <section class="card">
+        <h2>Subscriber roll-forward</h2>
+        <p class="sub">Opening + new + reactivated − churned = closing. Millions of subscribers; revenue in $M.</p>
+        <div class="tablewrap"><table id="table"></table></div>
+      </section>
+
+      <section class="card how">
+        <h2>How the model works</h2>
+        <ol>
+          <li><b>Sign-ups:</b> monthly active users × a conversion rate by region × plan mix (Nitro / Basic, monthly / annual). Some start on a free trial.</li>
+          <li><b>Cohorts:</b> each month's sign-ups shrink along a survival curve. Monthly plans lose most people in months 1–3; annual plans keep everyone for a year, then renew or leave.</li>
+          <li><b>Reactivation:</b> a share of recent churners come back each month on a monthly plan.</li>
+          <li><b>Revenue:</b> paying subscribers × net price: list price, regional pricing, discounts, VAT, and app store fees (Apple 30% in a subscriber's first year, 15% after).</li>
+        </ol>
+        <p>Every input is sourced and dated in the repo. Discord is private, so every Discord figure here is a third-party estimate. This is an independent portfolio project, not affiliated with Discord, and is about method rather than precision.</p>
+      </section>
+    </main>
+  </div>
+  <footer>Milestone 2 of 5: base case at reference FX. FX paths, scenarios and the driver bridge are still to come.</footer>
+</div>
+<script src="app.js"></script>
+</body>
+</html>

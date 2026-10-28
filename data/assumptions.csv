@@ -132,6 +132,7 @@ exp_conv_lift,experiment,all,all,0.05,relative,0,0.15,proposed,A01,2026-10-27,Ex
 exp_churn_change,experiment,all,all,-0.03,relative,-0.10,0.05,proposed,A01,2026-10-27,Negative = lower churn
 exp_price_change,experiment,all,all,0.00,relative,-0.20,0.20,proposed,A01,2026-10-27,Set e.g. 0.10 to test a 10% price increase
 cal_subs_mid2025,calibration,all,all,7.3,M subscribers,6.57,8.03,anchor,S01;S02;S03,2025-06-30,Single most-repeated figure; test band +/-10%
+cal_month_index,calibration,all,all,6,month index (Jan 2025 = 1),,,design,P01,2026-10-28,"June 2025: the month the 7.3M subscriber anchor is matched (closing subscribers, counted definition)"
 cal_subs_growth_2025,calibration,all,all,0.17,YoY,0.10,0.25,anchor,S02,2025-11-20,
 cal_nitro_rev_2025,calibration,all,all,365,USD M,280,450,anchor,S02;S03,2026-07-24,"Value = midpoint, for reference only. Test: FY2025 modeled revenue must land in [low, high]"
 ctx_total_rev_2025,context,all,all,561,USD M,561,1200,anchor,S02;S03;S05,2026-07-24,"Low cluster $561M (Feedough); high cluster $879M-$1.2B (Resourcera, Revenue Memo)"
