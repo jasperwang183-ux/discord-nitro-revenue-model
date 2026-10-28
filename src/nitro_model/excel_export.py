@@ -18,7 +18,8 @@ from openpyxl.utils import get_column_letter
 from nitro_model.arpu import PLANS
 from nitro_model.assumptions import Assumptions
 from nitro_model.cohorts import calibrate
-from nitro_model.params import BILLING, REACT_INTO, REGIONS, build_params
+from nitro_model.cohorts import REF_YEAR_END
+from nitro_model.params import BILLING, CURRENCIES, REACT_INTO, REGIONS, build_params
 
 C0 = 3  # first month column (C)
 HEAD = Font(bold=True)
@@ -42,7 +43,8 @@ SCALARS = [
     ("avg_discount", "avg_discount", "all", 1), ("fee_web", "store_fee", "WEB", 1),
     ("fee_ios_y1", "store_fee", "IOS_Y1", 1), ("fee_ios_later", "store_fee", "IOS_LATER", 1),
     ("fee_android", "store_fee", "ANDROID", 1), ("cal_target_subs", "cal_subs_mid2025", "all", 1e6),
-    ("cal_month_index", "cal_month_index", "all", 1),
+    ("cal_month_index", "cal_month_index", "all", 1), ("fx_shock", "fx_shock", "all", 1),
+    ("fx_spot_month_index", "fx_spot_month_index", "all", 1),
 ]
 REGION_VECTORS = ["mau_share", "conv_rate", "price_index", "indirect_tax", "open_region_mix"]
 PLAN_VECTORS = ["plan_mix", "open_plan_mix", "list_price"]
@@ -53,9 +55,9 @@ def col(t: int) -> str:
 
 
 class Book:
-    def __init__(self, a: Assumptions, scenario: str = "base"):
+    def __init__(self, a: Assumptions, scenario: str = "base", overrides: dict | None = None):
         self.a, self.scenario = a, scenario
-        self.p = build_params(a, scenario)
+        self.p = build_params(a, scenario) | (overrides or {})
         self.T = len(self.p["months"])
         self.wb = Workbook()
         self.wb.remove(self.wb.active)
@@ -106,6 +108,7 @@ class Book:
         self.curves()
         self.mau()
         self.prices()
+        self.fx()
         self.adds()
         self.paid()
         self.legacy()
@@ -124,7 +127,7 @@ class Book:
             "Flow: Assumptions -> Params -> Curves / MAU / Prices -> Adds -> Paid, Legacy, React -> Subs -> Revenue -> Checks.",
             "Change inputs only on the Assumptions sheet (yellow cells on Params link there). Params!k_cal is solved in Python.",
             "Active subscribers = SUMPRODUCT(sign-ups to date, reversed survival curve). Cohort_US_NitroM shows one segment as a full triangle.",
-            "Revenue is at reference (FY2025 average) FX; the FX path arrives in Milestone 3.",
+            "Prices are fixed in local currency at FY2025 average FX; the FX sheet turns them into USD each month (Params!fx_shock_dir: +1 = USD 10% stronger).",
         ]
         for i, line in enumerate(lines, 1):
             ws[f"A{i}"] = line
@@ -170,6 +173,12 @@ class Book:
                 add(f"{v}[{pn}]", f"={self.assumption_cell(v, pn)}", f"{v}[{pn}]")
         for pn, months in PLANS.items():
             add(f"billing_months[{pn}]", months, "structural: 1 = monthly, 12 = annual (recognized ratably)")
+        for v, aid in (("fx_avg", "fx_avg_2025"), ("fx_spot", "fx_spot"), ("policy_rate", "policy_rate")):
+            for c in CURRENCIES:
+                add(f"{v}[{c}]", f"={self.assumption_cell(aid, c)}", f"{aid}[{c}] (local per USD)" if v != "policy_rate" else f"{aid}[{c}]")
+        for seg in self.a.segments("fx_weight"):
+            add(f"fx_weight[{seg}]", f"={self.assumption_cell('fx_weight', seg)}", f"fx_weight[{seg}]")
+        add("fx_shock_dir", self.p["fx_shock_dir"], "SCENARIO CONTROL: 0 = forwards, +1 = USD 10% stronger from the month after spot, -1 = weaker")
         add("k_cal", calibrate(self.p), "SOLVED in Python: conversion scalar that hits the subscriber anchor (see Checks)")
         ws.column_dimensions["A"].width = 30
         ws.column_dimensions["C"].width = 70
@@ -248,6 +257,30 @@ class Book:
         for row in ws.iter_rows(min_row=2, min_col=3):
             for c in row:
                 c.number_format = "$0.000" if c.column in (3, 4, 5, 8, 9) else "0.000"
+
+    def fx(self):
+        ws = self.sheet("FX")
+        R = self.ref
+        ts = f"({R['fx_spot_month_index']}-1)"
+        ws["A3"] = "Rates: local currency per USD. FY2025 average to Dec 2025, linear to spot, then covered-interest-parity forwards."
+        for i, c in enumerate(CURRENCIES):
+            row = 5 + i
+            avg, spot, rate, usd = R[f"fx_avg[{c}]"], R[f"fx_spot[{c}]"], R[f"policy_rate[{c}]"], R["policy_rate[USD]"]
+            shock = "" if c == "USD" else f"*IF({{t}}>{ts},1+{R['fx_shock_dir']}*{R['fx_shock']},1)"
+            fn = lambda t, avg=avg, spot=spot, rate=rate, usd=usd, shock=shock: (
+                f"=IF({col(t)}$2<={REF_YEAR_END},{avg},IF({col(t)}$2<={ts},"
+                f"{avg}+({spot}-{avg})*({col(t)}$2-{REF_YEAR_END})/({ts}-{REF_YEAR_END}),"
+                f"{spot}*((1+{rate})/(1+{usd}))^(({col(t)}$2-{ts})/12)))" + shock.format(t=f"{col(t)}$2"))
+            self.row_formula(ws, row, "rate (local per USD)", c, fn, "0.0000")
+            self.rows[("FX", "rate", c)] = row
+        ws[f"A{6 + len(CURRENCIES)}"] = "FX index: USD value of local-currency prices vs FY2025 average (1.0 in FY2025)."
+        for i, r in enumerate(REGIONS):
+            row = 7 + len(CURRENCIES) + i
+            basket = [c for c in CURRENCIES if f"{r}|{c}" in self.a.segments("fx_weight")]
+            fn = lambda t, basket=basket, r=r: "=" + "+".join(
+                f"{R[f'fx_weight[{r}|{c}]']}*{R[f'fx_avg[{c}]']}/{col(t)}{self.rows[('FX', 'rate', c)]}" for c in basket)
+            self.row_formula(ws, row, "FX index", r, fn, "0.0000")
+            self.rows[("FX", "index", r)] = row
 
     def adds(self):
         ws = self.sheet("Adds")
@@ -396,7 +429,8 @@ class Book:
                 y1 = lambda t: (f"({g('Paid', 'active yr 1', t)}+{g('React', 'active yr 1', t)}"  # noqa: E731
                                 f"+{g('Legacy', 'active', t)}*Legacy!{col(t)}${y1row})")
                 self.row_formula(ws, row, "net revenue $", f"{r}|{pn}", lambda t: (
-                    f"={y1(t)}*Prices!$H${pr}+({g('Subs', 'paying', t)}-{y1(t)})*Prices!$I${pr}"), FMT_USD)
+                    f"=({y1(t)}*Prices!$H${pr}+({g('Subs', 'paying', t)}-{y1(t)})*Prices!$I${pr})"
+                    f"*FX!{col(t)}{self.rows[('FX', 'index', r)]}"), FMT_USD)
                 self.rows[("Revenue", r, pn)] = row
                 seg_rows.append(row)
                 row += 1
@@ -455,8 +489,9 @@ class Book:
         self.rows[("Checks", "fy25")] = 11
 
 
-def export(path: Path, scenario: str = "base") -> dict:
-    book = Book(Assumptions.load(), scenario)
+def export(path: Path, scenario: str = "base", overrides: dict | None = None) -> dict:
+    """overrides: scenario controls only (e.g. fx_shock_dir); inputs belong on the Assumptions sheet."""
+    book = Book(Assumptions.load(), scenario, overrides)
     layout = book.build()
     path.parent.mkdir(parents=True, exist_ok=True)
     book.wb.save(path)

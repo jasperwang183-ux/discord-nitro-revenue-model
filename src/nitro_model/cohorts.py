@@ -14,7 +14,12 @@ Conventions
   Reactivated users who churn again do not re-enter the pool.
 - Opening book: monthly plans decay at open_churn_tail; annual plans renew in 12 equal monthly buckets at
   annual_renewal_later. Its first-year share (for the Apple fee) runs off linearly over 12 months.
-- Revenue is at reference FX (FX path arrives in M3). Apple's fee is 30% for cohort ages 0-11, 15% after.
+- Apple's fee is 30% for cohort ages 0-11, 15% after.
+- FX: prices are fixed in local currency at the FY2025 average rate, so USD revenue = USD-equivalent price x FX index,
+  index = sum over the region's basket of weight x (FY2025 average / current rate), rates in local currency per USD.
+  Rate path: FY2025 average through Dec 2025, linear to the observed spot by fx_spot_t, then covered-interest-parity
+  forwards (spot x ((1 + i_local) / (1 + i_usd)) ^ years). Forwards are the hedgeable rate, not a prediction.
+  The shock moves every non-USD rate by fx_shock in direction fx_shock_dir after fx_spot_t (+1 = USD stronger).
 """
 from __future__ import annotations
 
@@ -79,6 +84,41 @@ def net_prices(p: dict) -> tuple[np.ndarray, np.ndarray]:
     keep_y1 = mix @ np.array([1 - p["fee_web"], 1 - p["fee_ios_y1"], 1 - p["fee_android"]])
     keep_later = mix @ np.array([1 - p["fee_web"], 1 - p["fee_ios_later"], 1 - p["fee_android"]])
     return after_tax * keep_y1[:, None], after_tax * keep_later[:, None]
+
+
+def store_keep(p: dict) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Share of net-of-VAT price kept after store fees, by platform: [R, platform] for year 1 and later; fee table."""
+    mix = np.array(p["platform_mix"])
+    fee_y1 = np.array([p["fee_web"], p["fee_ios_y1"], p["fee_android"]])
+    fee_later = np.array([p["fee_web"], p["fee_ios_later"], p["fee_android"]])
+    return mix * (1 - fee_y1), mix * (1 - fee_later), mix
+
+
+# ---------- FX ----------
+
+REF_YEAR_END = 11  # Dec 2025: the last month priced at the FY2025 average rate
+
+
+def fx_rates(p: dict, T: int) -> np.ndarray:
+    """Local currency per USD, [currency, month]."""
+    t = np.arange(T)
+    avg, spot = np.array(p["fx_avg"])[:, None], np.array(p["fx_spot"])[:, None]
+    ts = p["fx_spot_t"]
+    ramp = np.clip((t - REF_YEAR_END) / (ts - REF_YEAR_END), 0, 1)
+    path = avg + (spot - avg) * ramp
+    i = np.array(p["policy_rate"])
+    i_usd = i[p["currencies"].index("USD")]
+    fwd = spot * ((1 + i[:, None]) / (1 + i_usd)) ** (np.maximum(t - ts, 0) / 12)
+    path = np.where(t > ts, fwd, path)
+    non_usd = np.array([c != "USD" for c in p["currencies"]])[:, None]
+    shock = np.where(non_usd & (t > ts), 1 + p["fx_shock_dir"] * p["fx_shock"], 1.0)
+    return path * shock
+
+
+def fx_index(p: dict, T: int) -> np.ndarray:
+    """USD value of local-currency prices vs FY2025 average rates, [region, month]. 1.0 throughout FY2025."""
+    rel = np.array(p["fx_avg"])[:, None] / fx_rates(p, T)
+    return np.array(p["fx_weights"]) @ rel
 
 
 # ---------- engine ----------
@@ -160,8 +200,9 @@ def run(p: dict, k_cal: float | None = None) -> dict:
 
     # revenue
     p_y1, p_later = net_prices(p)
+    fx = fx_index(p, T)
     y1 = paid_active_y1 + react_active_y1 + legacy * legacy_y1_frac
-    revenue = y1 * p_y1[:, :, None] + (paying - y1) * p_later[:, :, None]
+    revenue = (y1 * p_y1[:, :, None] + (paying - y1) * p_later[:, :, None]) * fx[:, None, :]
 
     return {
         "k_cal": k_cal, "months": p["months"], "mau": mau, "gross_adds": gross_adds,
@@ -170,7 +211,8 @@ def run(p: dict, k_cal: float | None = None) -> dict:
         "legacy": legacy, "legacy_churn": legacy_churn, "react_out": react_out, "react_starts": react_starts,
         "react_active": react_active, "react_churn": react_churn,
         "opening": opening, "new": new, "reactivated": react_starts, "churned": churned, "closing": closing,
-        "paying": paying, "revenue": revenue, "net_price_y1": p_y1, "net_price_later": p_later,
+        "paying": paying, "paying_y1": y1, "revenue": revenue, "fx_index": fx,
+        "net_price_y1": p_y1, "net_price_later": p_later,
         "survival": surv, "react_survival": rs,
     }
 
@@ -223,6 +265,63 @@ def layers(p: dict, res: dict) -> dict:
     return out
 
 
+WALK_STEPS = ["US list price", "Regional pricing", "Discounts", "VAT", "App store & card fees", "FX"]
+
+
+def _yearly(x: np.ndarray) -> np.ndarray:
+    """Sum the month axis into years: [..., T] -> [..., T // 12]."""
+    return x.reshape(x.shape[:-1] + (-1, 12)).sum(axis=-1)
+
+
+def drivers(p: dict, res: dict) -> dict:
+    """ARPU walk and breakdowns by year. Every $ figure is per paying subscriber per year unless named otherwise.
+
+    The walk applies one deduction at a time to the same subscriber base, so its last step equals revenue.
+    """
+    paying, y1 = res["paying"], res["paying_y1"]
+    later = paying - y1
+    lst = (np.array(p["list_price"]) / np.array(p["billing_months"]))[None, :, None]
+    idx = np.array(p["price_index"])[:, None, None]
+    tax = np.array(p["indirect_tax"])[:, None, None]
+    keep_y1, keep_later, mix = store_keep(p)
+    k1, k2 = keep_y1.sum(axis=1)[:, None, None], keep_later.sum(axis=1)[:, None, None]
+    fx = res["fx_index"][:, None, :]
+
+    unit_net_vat = lst * idx * (1 - p["avg_discount"]) * (1 - tax)
+    levels = [
+        paying * lst,
+        paying * lst * idx,
+        paying * lst * idx * (1 - p["avg_discount"]),
+        paying * unit_net_vat,
+        unit_net_vat * (y1 * k1 + later * k2),
+        unit_net_vat * (y1 * k1 + later * k2) * fx,
+    ]
+    sub_years = _yearly(paying.sum(axis=(0, 1))) / 12
+    walk = {name: (_yearly(lv.sum(axis=(0, 1))) / sub_years).tolist() for name, lv in zip(WALK_STEPS, levels)}
+    counted_years = _yearly(res["closing"].sum(axis=(0, 1))) / 12
+    rev_y = _yearly(res["revenue"].sum(axis=(0, 1)))
+
+    gross_fx = unit_net_vat * fx  # net-of-VAT USD price before store fees
+    by_platform = {}
+    for j, name in enumerate(p["platforms"]):
+        m = mix[:, j][:, None, None]
+        kept = gross_fx * (y1 * keep_y1[:, j][:, None, None] + later * keep_later[:, j][:, None, None])
+        by_platform[name] = {"revenue": _yearly(kept.sum(axis=(0, 1))).tolist(),
+                             "fees": _yearly((gross_fx * paying * m - kept).sum(axis=(0, 1))).tolist()}
+    seg_rev, seg_subs = _yearly(res["revenue"]), _yearly(paying) / 12
+    safe = lambda a, b: np.where(b > 0, a / np.where(b > 0, b, 1), 0.0)  # noqa: E731
+    return {
+        "walk_steps": WALK_STEPS,
+        "walk": walk,
+        "per_counted_sub": (rev_y / counted_years).tolist(),
+        "by_platform": by_platform,
+        "arpu_region": safe(seg_rev.sum(axis=1), seg_subs.sum(axis=1)).tolist(),
+        "arpu_plan": safe(seg_rev.sum(axis=0), seg_subs.sum(axis=0)).tolist(),
+        "fx_index_avg": (_yearly(res["fx_index"]) / 12).tolist(),
+        "regions": p["regions"], "plans": p["plans"],
+    }
+
+
 def payload(p: dict, k_cal: float | None = None) -> dict:
     """Everything the website draws for one set of inputs, plus the live checks."""
     res = run(p, k_cal)
@@ -234,6 +333,7 @@ def payload(p: dict, k_cal: float | None = None) -> dict:
     return {
         "summary": summary(res),
         "layers": lay,
+        "drivers": drivers(p, res),
         "checks": {
             "rollforward_gap": float(np.abs(gap).max()),
             "cohort_tie_gap": float(np.abs(tie).max()),

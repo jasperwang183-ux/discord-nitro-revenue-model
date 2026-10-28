@@ -7,6 +7,11 @@ const LAYER_COLORS = {
 };
 const PCT_KEYS = new Set(["churn_m1", "churn_tail", "annual_renewal_first", "trial_share", "trial_to_paid", "react_rate", "mau_growth_first"]);
 
+const REGION_LABEL = { US_CA: "US & Canada", EUROPE: "Europe", LATAM: "Latin America", APAC: "Asia-Pacific", ROW: "Rest of world" };
+const PLAN_LABEL = { NITRO_M: "Nitro monthly", NITRO_A: "Nitro annual", BASIC_M: "Basic monthly", BASIC_A: "Basic annual" };
+const WALK_SHORT = { "US list price": "US list", "Regional pricing": "Regional", "Discounts": "Discounts", "VAT": "VAT",
+  "App store & card fees": "Store fees", "FX": "FX" };
+let walkYear = 0;
 const state = { base: null, params0: null, sliders: [], current: null, params: null, py: null, busy: false, queued: false };
 const $ = (id) => document.getElementById(id);
 
@@ -149,6 +154,69 @@ function subscriberChart(cur) {
   $("sub-legend").innerHTML = names.map((n) => `<span><i style="background:${LAYER_COLORS[n]}"></i>${n}</span>`).join("");
 }
 
+function walkChart(cur) {
+  const box = $("walk-chart");
+  box.querySelectorAll("svg").forEach((s) => s.remove());
+  const d = cur.drivers, steps = d.walk_steps, yi = walkYear;
+  const vals = steps.map((s) => d.walk[s][yi]);
+  const yearLabel = "FY" + cur.summary.months[12 * yi].slice(0, 4);
+  const lo = cur.checks.band[0] / cur.checks.cal_target, hi = cur.checks.band[1] / cur.checks.cal_target;
+  const bars = [{ label: WALK_SHORT[steps[0]], from: 0, to: vals[0], total: true, name: steps[0] }];
+  for (let i = 1; i < steps.length; i++) bars.push({ label: WALK_SHORT[steps[i]], from: vals[i - 1], to: vals[i], name: steps[i] });
+  bars.push({ label: "Net", from: 0, to: vals[vals.length - 1], total: true, name: "Net revenue per paying subscriber" });
+  const W = 720, H = 250, m = { l: 44, r: 112, t: 18, b: 26 };
+  const [max, tick] = niceScale(Math.max(vals[0], hi) * 1.08);
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": `ARPU walk for ${yearLabel}` }, box);
+  const y = (v) => m.t + (H - m.t - m.b) * (1 - v / max);
+  gridlines(svg, y, max, tick, m.l, W - m.r, (v) => "$" + Math.round(v));
+  const step = (W - m.l - m.r) / bars.length, bw = Math.min(52, step * 0.6);
+  for (const [v, name] of [[lo, "$280M est."], [hi, "$450M est."]]) {
+    el("line", { x1: m.l, x2: W - m.r, y1: y(v), y2: y(v), stroke: "var(--ink-2)", "stroke-width": 1, opacity: 0.7 }, svg);
+    el("text", { x: W - m.r + 6, y: y(v) + 4, style: "fill: var(--ink-2)" }, svg).textContent = `$${v.toFixed(0)} · ${name}`;
+  }
+  const tip = tooltip(box);
+  bars.forEach((b, i) => {
+    const cx = m.l + step * (i + 0.5), top = Math.max(b.from, b.to), bot = Math.min(b.from, b.to);
+    const h = Math.max(1.5, y(bot) - y(top));
+    if (b.total) el("path", { d: roundTop(cx - bw / 2, y(top), bw, y(bot) - y(top), 4), fill: "var(--series-1)" }, svg);
+    else el("rect", { x: cx - bw / 2, y: y(top), width: bw, height: h, rx: 3, fill: b.to < b.from ? "var(--ghost)" : "var(--c2025)" }, svg);
+    if (i < bars.length - 1) {
+      const nx = m.l + step * (i + 1.5) - bw / 2;
+      el("line", { x1: cx + bw / 2, x2: nx, y1: y(b.to), y2: y(b.to), stroke: "var(--axis)", "stroke-width": 1 }, svg);
+    }
+    const delta = b.total ? `$${b.to.toFixed(2)}` : (b.to >= b.from ? "+" : "−") + "$" + Math.abs(b.to - b.from).toFixed(2);
+    el("text", { x: cx, y: y(top) - 6, "text-anchor": "middle", style: "fill: var(--ink-2)" }, svg).textContent = delta;
+    el("text", { x: cx, y: H - 8, "text-anchor": "middle" }, svg).textContent = b.label;
+    const hit = el("rect", { x: cx - step / 2, y: m.t, width: step, height: H - m.t - m.b, fill: "transparent" }, svg);
+    hit.addEventListener("mousemove", (e) => {
+      const r = box.getBoundingClientRect();
+      tip.innerHTML = `<b>${b.name}, ${yearLabel}</b><div class="r"><span>${b.total ? "Level" : "Change"}</span><span>${delta}</span></div>` +
+        (b.total ? "" : `<div class="r"><span>After this step</span><span>$${b.to.toFixed(2)}</span></div>`);
+      placeTip(tip, box, e.clientX - r.left, e.clientY - r.top);
+    });
+    hit.addEventListener("mouseleave", () => (tip.style.display = "none"));
+  });
+  const fees = Object.values(d.by_platform).reduce((a, v) => a + v.fees[yi], 0);
+  const ios = d.by_platform.IOS.fees[yi];
+  const counted = d.per_counted_sub[yi], paying = vals[vals.length - 1];
+  $("walk-note").innerHTML = `App stores and card processors keep <b>${fmtUSD(fees)}</b> in ${yearLabel}, ${Math.round((100 * ios) / fees)}% of it Apple's. ` +
+    (Math.abs(counted - paying) > 0.01 ? `Counting free-trial users as subscribers, net revenue per counted subscriber is <b>$${counted.toFixed(2)}</b>. ` : "") +
+    `The model lands at $${paying.toFixed(0)}; reaching $${lo.toFixed(0)} needs a definition the drivers don't capture (see the reconciliation doc).`;
+  $("walk-years").innerHTML = d.walk.FX.map((_, i) =>
+    `<button type="button" role="tab" aria-selected="${i === yi}" data-i="${i}">FY${cur.summary.months[12 * i].slice(0, 4)}</button>`).join("");
+  $("walk-years").querySelectorAll("button").forEach((b) => b.addEventListener("click", () => {
+    walkYear = +b.dataset.i; walkChart(state.current); arpuTables(state.current);
+  }));
+}
+
+function arpuTables(cur) {
+  const d = cur.drivers, yi = walkYear, yl = "FY" + cur.summary.months[12 * yi].slice(0, 4);
+  const rows = (labels, keys, vals) => keys.map((k, i) =>
+    `<tr><td>${labels[k]}</td><td>$${vals[i][yi].toFixed(2)}</td><td>$${(vals[i][yi] / 12).toFixed(2)}</td></tr>`).join("");
+  $("arpu-region").innerHTML = `<thead><tr><th>Region, ${yl}</th><th>$/sub/yr</th><th>$/mo</th></tr></thead><tbody>${rows(REGION_LABEL, d.regions, d.arpu_region)}</tbody>`;
+  $("arpu-plan").innerHTML = `<thead><tr><th>Plan, ${yl}</th><th>$/sub/yr</th><th>$/mo</th></tr></thead><tbody>${rows(PLAN_LABEL, d.plans, d.arpu_plan)}</tbody>`;
+}
+
 // ---------- tiles, checks, table ----------
 function tiles(cur, base, changed) {
   const yc = years(cur.summary), yb = years(base.summary);
@@ -156,7 +224,8 @@ function tiles(cur, base, changed) {
   const cagr = (ys) => Math.pow(ys[last].revenue / ys[0].revenue, 1 / last) - 1;
   const [lo, hi] = cur.checks.band;
   const inBand = yc[0].revenue >= lo && yc[0].revenue <= hi;
-  const delta = (a, b, f) => (changed ? signed(a - b, f) + " vs base" : "");
+  const delta = (a, b, f) => (!changed ? "" : Math.abs(a - b) <= 1e-6 * Math.max(1, Math.abs(b)) ? "no change vs base"
+    : signed(a - b, f) + " vs base");
   const items = [
     ["FY2025 net revenue", fmtUSD(yc[0].revenue), inBand ? "✓ inside public estimates" : "✕ outside $280–450M", inBand ? "good" : "bad"],
     [`FY${yc[last].year} net revenue`, fmtUSD(yc[last].revenue), delta(yc[last].revenue, yb[last].revenue, fmtUSD), ""],
@@ -196,6 +265,8 @@ function table(cur) {
 function render() {
   const changed = isChanged();
   revenueChart(state.current, state.base, changed);
+  walkChart(state.current);
+  arpuTables(state.current);
   subscriberChart(state.current);
   tiles(state.current, state.base, changed);
   checks(state.current);
@@ -203,9 +274,15 @@ function render() {
 }
 
 // ---------- controls ----------
+function setFx(v) {
+  state.params.fx_shock_dir = v;
+  $("fx").querySelectorAll("button").forEach((b) => b.setAttribute("aria-checked", String(+b.dataset.v === v)));
+}
+
 function isChanged() {
   return state.sliders.some((s) => state.params[s.key] !== state.params0[s.key]) ||
-    state.params.count_trials_as_subs !== state.params0.count_trials_as_subs || !$("recal").checked;
+    state.params.count_trials_as_subs !== state.params0.count_trials_as_subs || !$("recal").checked ||
+    state.params.fx_shock_dir !== state.params0.fx_shock_dir;
 }
 
 function buildSliders() {
@@ -284,8 +361,10 @@ async function main() {
   $("trials").checked = !!state.params0.count_trials_as_subs;
   $("trials").addEventListener("change", (e) => { state.params.count_trials_as_subs = e.target.checked ? 1 : 0; schedule(); });
   $("recal").addEventListener("change", schedule);
+  $("fx").querySelectorAll("button").forEach((b) => b.addEventListener("click", () => { setFx(+b.dataset.v); schedule(); }));
   $("reset").addEventListener("click", () => {
     state.params = structuredClone(state.params0);
+    setFx(state.params0.fx_shock_dir);
     $("recal").checked = true;
     $("trials").checked = !!state.params0.count_trials_as_subs;
     buildSliders();
