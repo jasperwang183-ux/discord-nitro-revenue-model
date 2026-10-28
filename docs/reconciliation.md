@@ -40,6 +40,32 @@ Paying-subscriber ARPU lands at **$61/yr**, the top of the $38–$62 band. That 
 
 **Decision (proposed, needs owner sign-off):** the calibration test is that modeled FY2025 Nitro revenue falls inside **[$280M, $450M]**, a band rather than a point. The ARPU test checks the same band per subscriber. The memo will say which end the model sits nearer and which definition that implies.
 
+**Step 4: what the full model says (M3).** This is the cohort engine's FY2025 walk over the real subscriber base: tenure-based Apple fees, new cohorts as well as the opening book, and FX. Reproduce it with `cohorts.drivers` or on the website.
+
+| Step | $/paying sub/yr, FY2025 |
+|---|---|
+| US list price at the modeled plan mix | $82.76 |
+| Regional pricing | $77.44 |
+| Discounts | $73.57 |
+| VAT (VAT-inclusive regions only) | $67.99 |
+| App store and card fees | $61.36 |
+| FX (none in FY2025: priced at the FY2025 average) | **$61.36** |
+| Per counted subscriber (trialists included) | $60.81 |
+
+The model gives **$447M**, near the top of the band. So the question is what it would take to reach $38 (the $280M estimate). I re-ran the engine with each driver pushed to the bearish end of its documented range, re-solving conversion each time:
+
+| Change (everything else at base) | FY2025 revenue | $/counted sub |
+|---|---|---|
+| Base | $447M | $60.81 |
+| Trials at the top of their range (40% of sign-ups, 3-month trials, counted as subscribers) | $420M | $57.52 |
+| Regional prices at the low end of their ranges | $407M | $55.46 |
+| **Basic-heavy plan mix** (Nitro 25/5, Basic 55/15) | **$318M** | **$43.25** |
+| All three together | $272M | $37.29 |
+
+**Reading:** promos and regional pricing can't explain the $280M figure on their own. Within the documented ranges they move ARPU by $3–5. **Plan mix is the only driver with enough leverage.** The $280M estimate is consistent with this model only if **most subscribers are on Nitro Basic**, and even then it needs heavy trials and low regional prices on top.
+
+**The tension to resolve before the memo:** Step 1 argued that Feedough's ~$450M probably *includes* Boosts. If that's right, a Nitro-only model matching $450M is too high, not validated. The answer hinges on the Nitro vs Basic split. It is the least-evidenced input (`plan_mix`, status `proposed`) and the most leveraged one, so it should be the first row to source or bound more tightly.
+
 ## 3. Total revenue: two clusters that can't both be right
 | Estimate | Source |
 |---|---|

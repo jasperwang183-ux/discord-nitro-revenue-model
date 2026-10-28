@@ -10,6 +10,7 @@ from nitro_model.arpu import PLANS, PLATFORMS
 from nitro_model.assumptions import Assumptions
 
 REGIONS = ("US_CA", "EUROPE", "LATAM", "APAC", "ROW")
+CURRENCIES = ("USD", "EUR", "BRL", "JPY", "INR")
 BILLING = {"NITRO_M": "MONTHLY", "NITRO_A": "ANNUAL", "BASIC_M": "MONTHLY", "BASIC_A": "ANNUAL"}
 REACT_INTO = {"NITRO_M": "NITRO_M", "NITRO_A": "NITRO_M", "BASIC_M": "BASIC_M", "BASIC_A": "BASIC_M"}
 M = 1e6
@@ -20,6 +21,7 @@ def build_params(a: Assumptions, scenario: str = "base") -> dict:
     plans = list(PLANS)
     start_year = int(g("model_start_year"))
     horizon = int(g("horizon_months"))
+    fx_segs = set(a.segments("fx_weight"))
     return {
         "scenario": scenario,
         "regions": list(REGIONS),
@@ -58,7 +60,17 @@ def build_params(a: Assumptions, scenario: str = "base") -> dict:
         "open_region_mix": [g("open_region_mix", r) for r in REGIONS],
         "open_churn_tail": g("open_churn_tail", "MONTHLY"),
         "open_y1_share": g("open_y1_share"),
-        # pricing (USD-equivalent at reference FX; FX path arrives in M3)
+        # FX: rates are local currency per USD; prices are fixed in local currency at FY2025 average rates
+        "currencies": list(CURRENCIES),
+        "fx_weights": [[a.get("fx_weight", f"{r}|{c}") if f"{r}|{c}" in fx_segs else 0.0 for c in CURRENCIES]
+                       for r in REGIONS],
+        "fx_avg": [g("fx_avg_2025", c) for c in CURRENCIES],
+        "fx_spot": [g("fx_spot", c) for c in CURRENCIES],
+        "fx_spot_t": int(g("fx_spot_month_index")) - 1,
+        "policy_rate": [g("policy_rate", c) for c in CURRENCIES],
+        "fx_shock": g("fx_shock"),
+        "fx_shock_dir": 0,  # scenario control: +1 = USD 10% stronger from Nov 2026, -1 = weaker
+        # pricing (USD-equivalent at reference FX)
         "list_price": [g("list_price", p) for p in plans],
         "billing_months": [PLANS[p] for p in plans],
         "price_index": [g("price_index", r) for r in REGIONS],

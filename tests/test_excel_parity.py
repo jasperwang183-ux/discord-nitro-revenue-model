@@ -54,3 +54,17 @@ def test_workbook_checks_all_true(xl):
     compiler, _ = xl
     for cell in ("C6", "C7", "C10", "C12"):  # roll-forward, cohort tie, calibration, public band
         assert bool(compiler.evaluate(f"Checks!{cell}")), cell
+
+
+@pytest.mark.parametrize("shock", [1, -1])
+def test_fx_shock_matches_in_workbook(tmp_path, params, shock):
+    """The FX sheet applies the shock the same way the engine does."""
+    from nitro_model.cohorts import run
+
+    path = tmp_path / "shock.xlsx"
+    layout = export(path, overrides={"fx_shock_dir": shock})
+    compiler = ExcelCompiler(filename=str(path))
+    expected = run(params | {"fx_shock_dir": shock})["revenue"].sum(axis=(0, 1))
+    row = layout["rows"][("Revenue", "TOTAL")]
+    for t in (11, 21, 22, 40, 71):
+        assert compiler.evaluate(f"Revenue!{col(t)}{row}") == pytest.approx(expected[t], abs=1.0)
